@@ -310,6 +310,15 @@ class TripRepository @Inject constructor(
                 transaction.delete(firestore.collection("users").document(userId).collection("invitations").document(invitation.id))
             }.await()
             
+            // Add Person document so they appear in payer dropdown
+            val acceptedParticipant = invitation.inviterName // TODO: Get actual name from user profile
+            insertPerson(Person(
+                tripId = invitation.tripId,
+                name = auth.currentUser?.displayName ?: "Joined User",
+                userId = userId,
+                phoneNumber = auth.currentUser?.phoneNumber
+            ))
+            
             // Subscribe to topic
             subscribeToTripTopic(invitation.tripId)
             

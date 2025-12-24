@@ -363,9 +363,11 @@ class AddEditTripViewModel @Inject constructor(
                         ))
                     }
                     
-                    // Add other participants as people (skip if same as creator)
+                    // Add other participants as people ONLY if they are JOINED (not pending)
+                    // Pending participants shouldn't appear in payer dropdown
                     for (participant in updatedParticipants) {
-                        if (participant.userId != currentCreatorId) {
+                        if (participant.userId != currentCreatorId && 
+                            participant.status == Participant.STATUS_JOINED) {
                             repository.insertPerson(Person(
                                 tripId = finalTripId, 
                                 name = participant.name,

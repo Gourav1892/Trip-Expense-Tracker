@@ -289,9 +289,15 @@ fun TripDetailsScreen(
                     }
                 }
                 
-                items(currentTrip.participants.size) { index ->
-                    val participant = currentTrip.participants[index]
+                // Filter out declined participants
+                val visibleParticipants = currentTrip.participants.filter { 
+                    it.status != com.example.tripexpensetracker.data.model.Participant.STATUS_DECLINED 
+                }
+                
+                items(visibleParticipants.size) { index ->
+                    val participant = visibleParticipants[index]
                     val isPending = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_INVITED
+                    val isJoined = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
                     
                     Card(
                         modifier = Modifier
@@ -330,7 +336,7 @@ fun TripDetailsScreen(
                                 Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
                                     Text("Pending", style = MaterialTheme.typography.labelSmall)
                                 }
-                            } else {
+                            } else if (isJoined) {
                                 Icon(
                                     Icons.Default.CheckCircle,
                                     contentDescription = "Joined",
