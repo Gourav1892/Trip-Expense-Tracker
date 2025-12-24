@@ -12,9 +12,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ExitToApp
@@ -267,6 +269,80 @@ fun TripDetailsScreen(
                     budget = trip?.budget,
                     budgetAlertThreshold = trip?.budgetAlertThreshold ?: 80.0
                 )
+            }
+            
+            // Participants Section
+            val currentTrip = trip
+            if (currentTrip != null && currentTrip.participants.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Participants",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+                }
+                
+                items(currentTrip.participants.size) { index ->
+                    val participant = currentTrip.participants[index]
+                    val isPending = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_INVITED
+                    
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isPending) 
+                                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f) 
+                            else 
+                                MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = if (isPending) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = participant.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (isPending) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            
+                            if (isPending) {
+                                Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
+                                    Text("Pending", style = MaterialTheme.typography.labelSmall)
+                                }
+                            } else {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = "Joined",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                item { Spacer(modifier = Modifier.height(8.dp)) }
             }
             
             // Cities Section Header
