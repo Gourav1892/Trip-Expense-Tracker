@@ -32,6 +32,8 @@ fun ParticipantSelectionSheet(
     val suggestedContacts by viewModel.suggestedContacts.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     
+    val isMatchingContacts by viewModel.isMatchingContacts.collectAsState()
+    
     val context = androidx.compose.ui.platform.LocalContext.current
     var hasPermission by remember { 
         mutableStateOf(
@@ -115,6 +117,7 @@ fun ParticipantSelectionSheet(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+
                     // 0. Permission / Sync Banner
                     if (!hasPermission) {
                         item {
@@ -136,6 +139,18 @@ fun ParticipantSelectionSheet(
                                 }
                             }
                         }
+                    } else if (isMatchingContacts) {
+                         item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Finding friends from contacts...", style = MaterialTheme.typography.bodySmall)
+                            }
+                         }
                     }
                     
                     // 0.5 Suggested Contacts (Matches)

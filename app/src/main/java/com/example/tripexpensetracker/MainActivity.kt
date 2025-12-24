@@ -73,6 +73,12 @@ sealed class Screen(val route: String) {
     object SuggestedContacts : Screen("suggested_contacts")
 
 
+
+    object Analytics : Screen("analytics/{tripId}") {
+        fun createRoute(tripId: String) = "analytics/$tripId"
+    }
+
+
     object Onboarding : Screen("onboarding")
 }
 
@@ -246,6 +252,9 @@ fun AppNavigation(startDestination: String) {
                  onEditTripClick = {
                      navController.navigate(Screen.AddEditTrip.createRoute(tripId))
                  },
+                 onNavigateToAnalytics = { tId ->
+                     navController.navigate(Screen.Analytics.createRoute(tId))
+                 },
                  onNavigateToCityDetails = { destinationId ->
                      navController.navigate("cityDetails/$tripId/$destinationId")
                  }
@@ -306,6 +315,17 @@ fun AppNavigation(startDestination: String) {
                     // The viewModel in TripDetailsScreen will handle this
                     // We just need to navigate back
                 }
+            )
+        }
+
+        composable(
+            route = Screen.Analytics.route,
+            arguments = listOf(navArgument("tripId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
+            com.example.tripexpensetracker.ui.analytics.AnalyticsScreen(
+                tripId = tripId,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         

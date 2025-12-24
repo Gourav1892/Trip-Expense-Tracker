@@ -120,9 +120,14 @@ class TripDetailsViewModel @Inject constructor(
     fun resendInvite(participant: com.example.tripexpensetracker.data.model.Participant) {
         viewModelScope.launch {
             val currentTrip = trip.value ?: return@launch
-            // TODO: Implement resend invitation logic
-            // This would require adding the function to TripRepository
-            android.util.Log.d("TripDetails", "Resend invite requested for ${participant.name}")
+            // Call repository to resend invitation
+            // Note: inviteeId is the userId of the participant
+             if (participant.userId != null) {
+                repository.resendInvitation(currentTrip.id, currentTrip.name, participant.userId)
+                android.util.Log.d("TripDetails", "Resent invite to ${participant.name}")
+            } else {
+                 android.util.Log.e("TripDetails", "Cannot resend invite: Participant userId is null")
+            }
         }
     }
     
@@ -131,5 +136,38 @@ class TripDetailsViewModel @Inject constructor(
      */
     suspend fun getCityStats(destinationId: String): com.example.tripexpensetracker.data.model.CityStats {
         return repository.getCityStats(_tripId, destinationId)
+    }
+
+    fun updateBudget(amount: Double) {
+        viewModelScope.launch {
+            repository.updateTripBudget(_tripId, amount)
+        }
+    }
+
+    fun generateCsvExport(): String {
+        val currentTrip = trip.value ?: return ""
+        val currentExpenses = expenses.value
+
+        val sb = StringBuilder()
+        sb.append("Date,Title,Category,Amount,Payer\n")
+        
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+        
+        currentExpenses.forEach { expense ->
+            val date = dateFormat.format(expense.date)
+            // Escape commas in title
+            val title = expense.title.replace(",", " ")
+            val category = expense.category
+            val amount = expense.amount
+            
+            // Resolve payer name
+            // We need the people list. It's in 'people' flow.
+            // Accessing current value of flow roughly
+            val payerName = people.value.find { it.id == expense.paidByPersonId }?.name ?: "Unknown"
+            
+            sb.append("$date,$title,$category,$amount,$payerName\n")
+        }
+        
+        return sb.toString()
     }
 }

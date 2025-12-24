@@ -15,6 +15,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +44,8 @@ fun TripDetailsScreen(
     onAddExpenseClick: (String) -> Unit,
     onSettleClick: (String) -> Unit,
     onEditTripClick: (String) -> Unit,
+
+    onNavigateToAnalytics: (String) -> Unit, // New callback
     onNavigateToCityDetails: (String) -> Unit = {}, // Navigate to city details
     viewModel: TripDetailsViewModel = hiltViewModel()
 ) {
@@ -164,9 +176,12 @@ fun TripDetailsScreen(
         )
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = { Text(trip?.name ?: "Trip Details") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -184,10 +199,13 @@ fun TripDetailsScreen(
                         val shareIntent = android.content.Intent.createChooser(sendIntent, null)
                         context.startActivity(shareIntent)
                     }) {
-                        Icon(Icons.Default.Share, contentDescription = "Share Trip")
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Invite Friends")
                     }
                     IconButton(onClick = { onEditTripClick(tripId) }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit Trip")
+                    }
+                    IconButton(onClick = { onNavigateToAnalytics(tripId) }) {
+                        Icon(Icons.Default.DateRange, contentDescription = "Analytics")
                     }
                     IconButton(onClick = { showDeleteTripDialog = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete Trip")
@@ -197,11 +215,27 @@ fun TripDetailsScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Settle")
                     }
+                    
+                    IconButton(onClick = {
+                         val csvData = viewModel.generateCsvExport()
+                         val sendIntent = android.content.Intent().apply {
+                             action = android.content.Intent.ACTION_SEND
+                             putExtra(android.content.Intent.EXTRA_TEXT, csvData)
+                             type = "text/csv"
+                             putExtra(android.content.Intent.EXTRA_SUBJECT, "Trip Expenses: ${trip?.name}")
+                         }
+                         val shareIntent = android.content.Intent.createChooser(sendIntent, "Export Expenses")
+                         context.startActivity(shareIntent)
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export CSV")
+                    }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
+                colors = TopAppBarDefaults.largeTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.primary
-                )
+                    titleContentColor = MaterialTheme.colorScheme.primary,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                ),
+                scrollBehavior = scrollBehavior
             )
         },
         floatingActionButton = {
@@ -226,7 +260,9 @@ fun TripDetailsScreen(
             item {
                 TripSummaryCard(
                     expenses = expenses,
-                    destinations = destinations
+                    destinations = destinations,
+                    budget = trip?.budget,
+                    budgetAlertThreshold = trip?.budgetAlertThreshold ?: 80.0
                 )
             }
             
@@ -568,20 +604,9 @@ fun ItineraryTabContent(
 
 @Composable
 fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit) {
-    val emoji = when (expense.category) {
-        "Food" -> "🍔"
-        "Transport" -> "🚗"
-        "Lodging" -> "🏨"
-        "Entertainment" -> "🎬"
-        else -> "📦"
-    }
-    
     ListItem(
         leadingContent = {
-            Text(
-                text = emoji,
-                style = MaterialTheme.typography.headlineMedium
-            )
+            com.example.tripexpensetracker.ui.common.CategoryIcon(category = expense.category)
         },
         headlineContent = { Text(expense.title) },
         supportingContent = { Text(java.text.DateFormat.getDateInstance().format(expense.date)) },
@@ -605,7 +630,9 @@ fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit) {
 @Composable
 fun TripSummaryCard(
     expenses: List<Expense>,
-    destinations: List<com.example.tripexpensetracker.data.model.Destination>
+    destinations: List<com.example.tripexpensetracker.data.model.Destination>,
+    budget: Double? = null,
+    budgetAlertThreshold: Double = 80.0
 ) {
     Card(
         modifier = Modifier
@@ -615,31 +642,82 @@ fun TripSummaryCard(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    "Total Trip Expenses",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Text(
-                    NumberFormat.getCurrencyInstance().format(expenses.sumOf { it.amount }),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "${destinations.size} ${if (destinations.size == 1) "city" else "cities"} • ${expenses.size} expenses",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+        Column(modifier = Modifier.padding(16.dp)) {
+            val totalSpent = expenses.sumOf { it.amount }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "Total Trip Expenses",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        NumberFormat.getCurrencyInstance().format(totalSpent),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
+            
+            if (budget != null && budget > 0) {
+                 Spacer(modifier = Modifier.height(8.dp))
+                 val progress = (totalSpent / budget).toFloat().coerceIn(0f, 1f)
+                 val isOverBudget = totalSpent > budget
+
+                 val isAlertZone = (progress * 100) >= budgetAlertThreshold
+
+                 LinearProgressIndicator(
+                     progress = progress,
+                     modifier = Modifier.fillMaxWidth().height(8.dp),
+                     color = when {
+                         isOverBudget -> MaterialTheme.colorScheme.error
+                         isAlertZone -> androidx.compose.ui.graphics.Color(0xFFFF9800) // Orange for warning
+                         else -> MaterialTheme.colorScheme.primary
+                     },
+                     trackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f),
+                 )
+                 
+                 Spacer(modifier = Modifier.height(4.dp))
+                 
+                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                     Text(
+                         text = "${(progress * 100).toInt()}% used",
+                         style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSecondaryContainer
+                     )
+                     Text(
+                         text = "Budget: ${NumberFormat.getCurrencyInstance().format(budget)}",
+                         style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSecondaryContainer
+                     )
+                 }
+                 
+                 if (isOverBudget) {
+                      Text(
+                         text = "Over Budget by ${NumberFormat.getCurrencyInstance().format(totalSpent - budget)}",
+                         style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.error
+                     )
+                 } else if (isAlertZone) {
+                      Text(
+                         text = "⚠️ You've used ${ (progress * 100).toInt()}% of your budget (Alert at $budgetAlertThreshold%)",
+                         style = MaterialTheme.typography.labelSmall,
+                         color = androidx.compose.ui.graphics.Color(0xFFFF9800)
+                     )
+                 }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "${destinations.size} ${if (destinations.size == 1) "city" else "cities"} • ${expenses.size} expenses",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
         }
     }
 }

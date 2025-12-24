@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,8 +45,27 @@ class AddEditExpenseViewModel @Inject constructor(
         object Success : UiState()
     }
 
+
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow<UiState>(UiState.Idle)
     val uiState: StateFlow<UiState> = _uiState
+
+    // Smart Suggestions state
+    private val _category = kotlinx.coroutines.flow.MutableStateFlow("General")
+    val category = _category.asStateFlow()
+
+    fun onTitleChanged(title: String) {
+        // If the current category is "General" (default), try to find a better one
+        if (_category.value == "General") {
+            val suggestion = CategorySuggester.suggestCategory(title)
+            if (suggestion != null) {
+                _category.value = suggestion
+            }
+        }
+    }
+
+    fun onCategorySelected(newCategory: String) {
+        _category.value = newCategory
+    }
 
     fun saveExpense(
         tripId: String,
@@ -55,13 +75,15 @@ class AddEditExpenseViewModel @Inject constructor(
         splitType: SplitType,
         shares: Map<String, Double>,
         selectedPersonIds: Set<String>,
-        category: String,
+
         destinationId: String = "", // City/destination association
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
+                // Use current category state
+                val finalCategory = _category.value
                 val expenseShares = if (splitType == SplitType.UNEQUAL) {
                     shares.map { (personId, shareAmount) ->
                         com.example.tripexpensetracker.data.model.ExpenseShare(
@@ -118,8 +140,9 @@ class AddEditExpenseViewModel @Inject constructor(
                         destinationId = destinationId,
                         paidByPersonId = paidByPersonId,
                         title = title,
+
                         amount = amount,
-                        category = category
+                        category = finalCategory
                     ),
                     expenseShares
                 )

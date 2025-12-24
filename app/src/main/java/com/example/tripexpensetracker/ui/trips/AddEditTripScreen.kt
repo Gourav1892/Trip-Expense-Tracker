@@ -40,7 +40,10 @@ fun AddEditTripScreen(
     viewModel: AddEditTripViewModel = hiltViewModel()
 ) {
     val tripName by viewModel.tripName.collectAsState()
+    val budget by viewModel.budget.collectAsState()
     val participants by viewModel.participants.collectAsState()
+    val alertThreshold by viewModel.alertThreshold.collectAsState()
+
     var showFriendSelector by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
@@ -123,6 +126,33 @@ fun AddEditTripScreen(
                 label = { Text("Trip Name") },
                 modifier = Modifier.fillMaxWidth()
             )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = budget,
+                enabled = uiState !is AddEditTripViewModel.UiState.Loading,
+                onValueChange = { viewModel.onBudgetChanged(it) },
+                label = { Text("Total Budget (Optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            )
+
+            if (budget.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Alert me at ${(alertThreshold).toInt()}% of budget",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Slider(
+                    value = alertThreshold,
+                    onValueChange = { viewModel.onAlertThresholdChanged(it) },
+                    valueRange = 50f..100f,
+                    steps = 9 // 50, 55, 60... 100? No, steps count. 50 to 100. 
+                    // Let's just make it smooth or 5% increments.
+                    // 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100 = 11 points = 10 steps.
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

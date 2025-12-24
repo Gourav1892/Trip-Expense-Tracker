@@ -12,6 +12,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Notifications
 
 import androidx.compose.material3.*
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,6 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.tripexpensetracker.data.model.Trip
 import java.text.SimpleDateFormat
@@ -137,31 +146,119 @@ fun TripListScreen(
 
 @Composable
 fun TripItem(trip: Trip, onClick: () -> Unit, onDeleteClick: () -> Unit, modifier: Modifier = Modifier) {
+    val gradient = remember(trip.id) {
+        val colors = listOf(
+            listOf(Color(0xFF4CA1AF), Color(0xFFC4E0E5)), // Blue/Green
+            listOf(Color(0xFFff9966), Color(0xFFff5e62)), // Orange/Red
+            listOf(Color(0xFF00c6ff), Color(0xFF0072ff)), // Blue
+            listOf(Color(0xFF11998e), Color(0xFF38ef7d)), // Green
+            listOf(Color(0xFF8E2DE2), Color(0xFF4A00E0)), // Purple
+        )
+        // Pick a stable color based on trip ID hash
+        val colorPair = colors[kotlin.math.abs(trip.id.hashCode()) % colors.size]
+        Brush.linearGradient(
+            colors = colorPair,
+            start = Offset(0f, 0f),
+            end = Offset(1000f, 1000f) // Approximate diagonal
+        )
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clickable(onClick = onClick),
-
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        Box(
+            modifier = Modifier.background(gradient)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = trip.name, style = MaterialTheme.typography.titleLarge)
-                Spacer(modifier = Modifier.height(4.dp))
-                val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-                Text(
-                    text = dateFormat.format(trip.startDate),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        
-            IconButton(onClick = onDeleteClick) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+            Column(
+                modifier = Modifier.padding(20.dp)
+            ) {
+                // Header: Name and Date
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = trip.name,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.3f),
+                                    blurRadius = 4f
+                                )
+                            ),
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Started ${dateFormat.format(trip.startDate)}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+                    
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Footer: Budget Info
+                if (trip.budget != null && trip.budget > 0) {
+                   Column {
+                       Row(
+                           modifier = Modifier.fillMaxWidth(),
+                           horizontalArrangement = Arrangement.SpaceBetween
+                       ) {
+                           Text(
+                               text = "Budget",
+                               style = MaterialTheme.typography.labelSmall,
+                               color = Color.White.copy(alpha = 0.8f)
+                           )
+                           Text(
+                               text = java.text.NumberFormat.getCurrencyInstance().format(trip.budget),
+                               style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                               color = Color.White
+                           )
+                       }
+                       Spacer(modifier = Modifier.height(6.dp))
+                       LinearProgressIndicator(
+                           progress = 0f, // Placeholder until joined data
+                           modifier = Modifier.fillMaxWidth().height(4.dp),
+                           color = Color.White,
+                           trackColor = Color.White.copy(alpha = 0.3f)
+                       )
+                   }
+                } else {
+                     Spacer(modifier = Modifier.height(4.dp))
+                }
             }
         }
     }

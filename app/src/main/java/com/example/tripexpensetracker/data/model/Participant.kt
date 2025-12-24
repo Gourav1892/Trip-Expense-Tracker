@@ -1,5 +1,8 @@
 package com.example.tripexpensetracker.data.model
 
+import androidx.compose.runtime.Stable
+
+@Stable
 data class Participant(
     val name: String = "",
     val userId: String? = null,

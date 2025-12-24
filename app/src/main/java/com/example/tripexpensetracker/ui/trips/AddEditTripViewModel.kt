@@ -102,15 +102,25 @@ class AddEditTripViewModel @Inject constructor(
     private val _suggestedContacts = kotlinx.coroutines.flow.MutableStateFlow<List<com.example.tripexpensetracker.data.model.User>>(emptyList())
     val suggestedContacts = _suggestedContacts.asStateFlow()
 
+    private val _isMatchingContacts = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isMatchingContacts = _isMatchingContacts.asStateFlow()
+
     fun matchContacts(contacts: List<com.example.tripexpensetracker.ui.common.ContactData>) {
         viewModelScope.launch {
-            val phones = contacts.map { it.phoneNumber }
-            // Filter phones? simple batch is fine handled by repo
-            if (phones.isNotEmpty()) {
-                val matches = userRepository.getUsersByPhones(phones)
-                // Filter out existing friends and participants
-                val currentFriendIds = _friends.value.mapNotNull { it.linkedUserId }.toSet()
-                _suggestedContacts.value = matches.filter { !currentFriendIds.contains(it.uid) }
+            _isMatchingContacts.value = true
+            try {
+                val phones = contacts.map { it.phoneNumber }
+                if (phones.isNotEmpty()) {
+                    val matches = userRepository.getUsersByPhones(phones)
+                    val currentFriendIds = _friends.value.mapNotNull { it.linkedUserId }.toSet()
+                    _suggestedContacts.value = matches.filter { !currentFriendIds.contains(it.uid) }
+                } else {
+                    _suggestedContacts.value = emptyList()
+                }
+            } catch (e: Exception) {
+                // Log error
+            } finally {
+                _isMatchingContacts.value = false
             }
         }
     }
@@ -146,10 +156,19 @@ class AddEditTripViewModel @Inject constructor(
     private val _tripName = kotlinx.coroutines.flow.MutableStateFlow("")
     val tripName = _tripName.asStateFlow()
 
+    private val _budget = kotlinx.coroutines.flow.MutableStateFlow("")
+    val budget = _budget.asStateFlow()
+
+    private val _alertThreshold = kotlinx.coroutines.flow.MutableStateFlow(80f)
+    val alertThreshold = _alertThreshold.asStateFlow()
+
     private val _participants = kotlinx.coroutines.flow.MutableStateFlow<List<Participant>>(emptyList())
     val participants = _participants.asStateFlow()
     
     fun onTripNameChanged(name: String) { _tripName.value = name }
+
+    fun onBudgetChanged(amount: String) { _budget.value = amount }
+    fun onAlertThresholdChanged(value: Float) { _alertThreshold.value = value }
     fun onAddParticipant(participant: Participant) { _participants.value += participant }
     fun onRemoveParticipant(participant: Participant) { _participants.value -= participant }
     fun onUpdateParticipant(index: Int, participant: Participant) {
@@ -177,6 +196,8 @@ class AddEditTripViewModel @Inject constructor(
             if (trip != null) {
                 _tripName.value = trip.name
                 _participants.value = trip.participants
+                _budget.value = trip.budget?.toString() ?: ""
+                _alertThreshold.value = trip.budgetAlertThreshold?.toFloat() ?: 80f
             }
         }
     }
@@ -281,7 +302,9 @@ class AddEditTripViewModel @Inject constructor(
                          val trip = existingTrip.copy(
                              name = currentName, 
                              participants = updatedParticipants,
-                             participantIds = participantIds
+                             participantIds = participantIds,
+                             budget = _budget.value.toDoubleOrNull(),
+                             budgetAlertThreshold = _alertThreshold.value.toDouble()
                          )
                          repository.updateTrip(trip)
                          
@@ -304,7 +327,9 @@ class AddEditTripViewModel @Inject constructor(
                     val trip = Trip(
                         name = currentName, 
                         participants = updatedParticipants,
-                        participantIds = participantIds
+                        participantIds = participantIds,
+                        budget = _budget.value.toDoubleOrNull(),
+                        budgetAlertThreshold = _alertThreshold.value.toDouble()
                     )
                     finalTripId = repository.insertTrip(trip)
                     

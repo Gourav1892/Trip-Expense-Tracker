@@ -88,6 +88,12 @@ class TripRepository @Inject constructor(
     suspend fun deleteTrip(trip: Trip) {
         firestore.collection("trips").document(trip.id).delete().await()
     }
+    
+    suspend fun updateTripBudget(tripId: String, budget: Double) {
+        firestore.collection("trips").document(tripId)
+            .update("budget", budget)
+            .await()
+    }
 
     // Person Operations
     fun getPeopleForTrip(tripId: String): Flow<List<Person>> {

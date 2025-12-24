@@ -30,8 +30,10 @@ fun AddEditExpenseScreen(
 
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("General") }
+
+    val category by viewModel.category.collectAsState()
     var selectedPayer by remember { mutableStateOf<Person?>(null) }
+
     var expanded by remember { mutableStateOf(false) }
     
     // City selection
@@ -148,7 +150,7 @@ fun AddEditExpenseScreen(
                                 splitType = splitType, 
                                 shares = sharesMap, 
                                 selectedPersonIds = selectedForSplit, 
-                                category = category,
+
                                 destinationId = selectedDestination?.id ?: ""
                             ) {
                                 onNavigateBack()
@@ -207,7 +209,11 @@ fun AddEditExpenseScreen(
             OutlinedTextField(
                 value = title,
                 enabled = isFormEnabled,
-                onValueChange = { title = it },
+
+                onValueChange = { 
+                    title = it
+                    viewModel.onTitleChanged(it)
+                },
                 label = { Text("Description") },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -341,7 +347,7 @@ fun AddEditExpenseScreen(
                      val cat = categories[index]
                      FilterChip(
                          selected = category == cat,
-                         onClick = { category = cat },
+                         onClick = { viewModel.onCategorySelected(cat) },
                          label = { Text(cat) }
                      )
                  }
