@@ -11,6 +11,13 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +48,7 @@ import android.os.Build
 
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.hilt.navigation.compose.hiltViewModel
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
@@ -58,10 +66,19 @@ sealed class Screen(val route: String) {
         fun createRoute(tripId: String) = "settlement/$tripId"
     }
     object Profile : Screen("profile")
-
+    object Notifications : Screen("notifications")
     object ChangePassword : Screen("change_password")
+    object Friends : Screen("friends")
+    object AddFriend : Screen("add_friend")
+    object SuggestedContacts : Screen("suggested_contacts")
+
+
     object Onboarding : Screen("onboarding")
 }
+
+
+
+
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -90,11 +107,58 @@ class MainActivity : ComponentActivity() {
         }
         
         setContent {
-            TripExpenseTrackerTheme {
+            val isDarkTheme = remember { mutableStateOf(false) } // Ideally persisted
+            TripExpenseTrackerTheme(darkTheme = isDarkTheme.value) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val navController = rememberNavController()
+                    val joinViewModel: com.example.tripexpensetracker.ui.trips.JoinTripViewModel = hiltViewModel()
+                    
+                    // Handle Deep Link
+                    val currentIntent = intent
+                    LaunchedEffect(currentIntent) {
+                        if (Intent.ACTION_VIEW == currentIntent.action && currentIntent.data != null) {
+                            val data = currentIntent.data
+                            if (data?.scheme == "tripexpensetracker" && data.host == "invite") {
+                                val tripId = data.lastPathSegment
+                                if (tripId != null) {
+                                    joinViewModel.loadTripDetails(tripId)
+                                }
+                            }
+                        }
+                    }
+                    
+                    val joinState by joinViewModel.uiState.collectAsState()
+                    
+                    if (joinState is com.example.tripexpensetracker.ui.trips.JoinTripViewModel.JoinUiState.Loaded) {
+                        val trip = (joinState as com.example.tripexpensetracker.ui.trips.JoinTripViewModel.JoinUiState.Loaded).trip
+                        AlertDialog(
+                            onDismissRequest = { joinViewModel.reset() },
+                            title = { Text("Join Trip?") },
+                            text = { Text("You have been invited to join '${trip.name}'.") },
+                            confirmButton = {
+                                Button(onClick = {
+                                    joinViewModel.joinTrip(trip.id) {
+                                        joinViewModel.reset()
+                                        // Navigate to trip details
+                                        navController.navigate(Screen.TripDetails.createRoute(trip.id)) {
+                                            // Clear back stack to avoid weird loops? logic implies we are usually at root or trip list
+                                        }
+                                    }
+                                }) {
+                                    Text("Join")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { joinViewModel.reset() }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
+
                     val isConnected by mainViewModel.isConnected.collectAsState(initial = true)
                     
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -142,15 +206,10 @@ fun AppNavigation(startDestination: String) {
 
         composable(Screen.TripList.route) {
             TripListScreen(
-                onTripClick = { tripId ->
-                    navController.navigate(Screen.TripDetails.createRoute(tripId))
-                },
-                onAddTripClick = {
-                    navController.navigate(Screen.AddEditTrip.createRoute(null))
-                },
-                onProfileClick = {
-                    navController.navigate(Screen.Profile.route)
-                }
+                onTripClick = { tripId -> navController.navigate(Screen.TripDetails.createRoute(tripId)) },
+                onAddTripClick = { navController.navigate(Screen.AddEditTrip.createRoute(null)) },
+                onProfileClick = { navController.navigate(Screen.Profile.route) },
+                onNotificationsClick = { navController.navigate(Screen.Notifications.route) }
             )
         }
 
@@ -165,56 +224,113 @@ fun AppNavigation(startDestination: String) {
             )
         ) {
             AddEditTripScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToTripDetails = { tripId: String -> 
+                    navController.popBackStack()
+                    navController.navigate(Screen.TripDetails.createRoute(tripId))
+                }
             )
         }
 
-        composable(
-            route = "trip_details/{tripId}",
-            arguments = listOf(navArgument("tripId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
-            TripDetailsScreen(
-                tripId = tripId,
-                onBackClick = { navController.popBackStack() },
-                onAddExpenseClick = { id -> navController.navigate("add_edit_expense/$id") },
-                onSettleClick = { id -> navController.navigate("settlement/$id") },
-                onEditTripClick = { id -> navController.navigate(Screen.AddEditTrip.createRoute(id)) }
-            )
-        }
-
-        composable(
-            route = "add_edit_expense/{tripId}",
-            arguments = listOf(navArgument("tripId") { type = NavType.StringType })
-        ) { backStackEntry ->
+        composable(Screen.TripDetails.route) { backStackEntry ->
              val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
-             AddEditExpenseScreen(
+             TripDetailsScreen(
                  tripId = tripId,
-                 onNavigateBack = { navController.popBackStack() }
+                 onBackClick = { navController.popBackStack() },
+                 onAddExpenseClick = {
+                     navController.navigate(Screen.AddEditExpense.createRoute(tripId))
+                 },
+                 onSettleClick = {
+                     navController.navigate(Screen.Settlement.createRoute(tripId))
+                 },
+                 onEditTripClick = {
+                     navController.navigate(Screen.AddEditTrip.createRoute(tripId))
+                 },
+                 onNavigateToCityDetails = { destinationId ->
+                     navController.navigate("cityDetails/$tripId/$destinationId")
+                 }
              )
         }
 
         composable(
-            route = "settlement/{tripId}",
-            arguments = listOf(navArgument("tripId") { type = NavType.StringType })
+            route = Screen.AddEditExpense.route + "?destinationId={destinationId}",
+            arguments = listOf(
+                navArgument("tripId") { type = NavType.StringType },
+                navArgument("destinationId") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
         ) { backStackEntry ->
+             val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
+             val destinationId = backStackEntry.arguments?.getString("destinationId")
+             AddEditExpenseScreen(
+                 tripId = tripId,
+                 destinationId = destinationId,
+                 onNavigateBack = { navController.popBackStack() }
+             )
+        }
+
+        composable(Screen.Settlement.route) { backStackEntry ->
             val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
             SettlementScreen(
                 tripId = tripId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
+        
+        // City Details Route
+        composable(
+            route = "cityDetails/{tripId}/{destinationId}",
+            arguments = listOf(
+                navArgument("tripId") { type = NavType.StringType },
+                navArgument("destinationId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
+            val destinationId = backStackEntry.arguments?.getString("destinationId") ?: return@composable
+            com.example.tripexpensetracker.ui.cities.CityDetailsScreen(
+                tripId = tripId,
+                destinationId = destinationId,
+                onNavigateBack = { navController.popBackStack() },
+                onAddExpense = { destId ->
+                    navController.navigate("add_edit_expense/$tripId?destinationId=$destId")
+                },
+                onAddActivity = { destId ->
+                    // For now, we can reuse the existing add itinerary flow
+                    // Will enhance later to pre-select destination
+                    navController.navigate(Screen.TripDetails.createRoute(tripId))
+                },
+                onEndCityVisit = {
+                    // The viewModel in TripDetailsScreen will handle this
+                    // We just need to navigate back
+                }
+            )
+        }
+        
         composable(Screen.Profile.route) {
             ProfileScreen(
                 onSignOut = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true } // Clear entire stack
-                    }
+                     navController.navigate(Screen.Login.route) {
+                         popUpTo(0) { inclusive = true }
+                     }
                 },
                 onChangePassword = {
                     navController.navigate(Screen.ChangePassword.route)
                 },
+                onMyFriendsClick = {
+                    navController.navigate(Screen.Friends.route)
+                },
+                onFindFriendsClick = {
+                    navController.navigate(Screen.SuggestedContacts.route)
+                },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Notifications.route) {
+            com.example.tripexpensetracker.ui.notifications.NotificationsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -223,6 +339,25 @@ fun AppNavigation(startDestination: String) {
             ChangePasswordScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onPasswordChanged = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SuggestedContacts.route) {
+            com.example.tripexpensetracker.ui.contacts.SuggestedContactsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Friends.route) {
+            com.example.tripexpensetracker.ui.friends.FriendsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onAddFriendClick = { navController.navigate(Screen.AddFriend.route) }
+            )
+        }
+
+        composable(Screen.AddFriend.route) {
+            com.example.tripexpensetracker.ui.friends.AddFriendScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

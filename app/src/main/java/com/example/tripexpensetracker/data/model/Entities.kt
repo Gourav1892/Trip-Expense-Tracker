@@ -23,6 +23,7 @@ data class Person(
 data class Expense(
     val id: String = "",
     val tripId: String = "",
+    val destinationId: String = "", // Link to city/destination
     val paidByPersonId: String = "",
     val title: String = "",
     val amount: Double = 0.0,

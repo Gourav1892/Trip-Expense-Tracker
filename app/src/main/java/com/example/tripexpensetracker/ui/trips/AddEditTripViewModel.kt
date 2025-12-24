@@ -17,6 +17,8 @@ import javax.inject.Inject
 class AddEditTripViewModel @Inject constructor(
     private val repository: TripRepository,
     private val userRepository: UserRepository,
+    private val friendRepository: com.example.tripexpensetracker.data.repository.FriendRepository,
+    private val auth: com.google.firebase.auth.FirebaseAuth,
     private val savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
@@ -27,6 +29,118 @@ class AddEditTripViewModel @Inject constructor(
         if (tripId != null) {
             loadTrip(tripId!!)
         }
+        loadFriends()
+    }
+
+    private val _searchQuery = kotlinx.coroutines.flow.MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    private val _friends = kotlinx.coroutines.flow.MutableStateFlow<List<com.example.tripexpensetracker.data.model.Friend>>(emptyList())
+    // Raw friends list is not exposed directly for search anymore, we use filteredFriends
+
+    private val _filteredFriends = kotlinx.coroutines.flow.MutableStateFlow<List<com.example.tripexpensetracker.data.model.Friend>>(emptyList())
+    val filteredFriends = _filteredFriends.asStateFlow()
+
+    private fun loadFriends() {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            friendRepository.getFriends(userId).collect {
+                _friends.value = it
+                 // Initial filter (show all or none? Let's show all initally or when query is empty)
+                filterFriends(_searchQuery.value)
+            }
+        }
+    }
+
+    // User Search Logic
+    private val _userSearchResults = kotlinx.coroutines.flow.MutableStateFlow<List<com.example.tripexpensetracker.data.model.User>>(emptyList())
+    val userSearchResults = _userSearchResults.asStateFlow()
+
+    private val _isSearching = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isSearching = _isSearching.asStateFlow()
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        filterFriends(query)
+        searchGlobalUsers(query)
+    }
+
+    private fun filterFriends(query: String) {
+        if (query.isBlank()) {
+            _filteredFriends.value = _friends.value
+        } else {
+            _filteredFriends.value = _friends.value.filter {
+                it.name.contains(query, ignoreCase = true) || 
+                (it.phoneNumber != null && it.phoneNumber.contains(query))
+            }
+        }
+    }
+
+    private fun searchGlobalUsers(query: String) {
+        viewModelScope.launch {
+            if (query.length >= 3) {
+                _isSearching.value = true
+                try {
+                    val results = userRepository.searchUsers(query)
+                    // Filter out users who are already friends to avoid duplicates in UI if we wanted, 
+                    // but for now let's just show them. Ideally we deduplicate.
+                    // Let's remove results that are already in the friend list (linkedUserId)
+                    val friendUserIds = _friends.value.mapNotNull { it.linkedUserId }.toSet()
+                    _userSearchResults.value = results.filter { !friendUserIds.contains(it.uid) }
+                } catch (e: Exception) {
+                    _userSearchResults.value = emptyList()
+                } finally {
+                    _isSearching.value = false
+                }
+            } else {
+                _userSearchResults.value = emptyList()
+            }
+        }
+    }
+
+    // Suggested Contacts (from Device)
+    private val _suggestedContacts = kotlinx.coroutines.flow.MutableStateFlow<List<com.example.tripexpensetracker.data.model.User>>(emptyList())
+    val suggestedContacts = _suggestedContacts.asStateFlow()
+
+    fun matchContacts(contacts: List<com.example.tripexpensetracker.ui.common.ContactData>) {
+        viewModelScope.launch {
+            val phones = contacts.map { it.phoneNumber }
+            // Filter phones? simple batch is fine handled by repo
+            if (phones.isNotEmpty()) {
+                val matches = userRepository.getUsersByPhones(phones)
+                // Filter out existing friends and participants
+                val currentFriendIds = _friends.value.mapNotNull { it.linkedUserId }.toSet()
+                _suggestedContacts.value = matches.filter { !currentFriendIds.contains(it.uid) }
+            }
+        }
+    }
+
+    fun onAddFriend(friend: com.example.tripexpensetracker.data.model.Friend) {
+        val newParticipant = Participant(
+            name = friend.name,
+            userId = friend.linkedUserId,
+            phoneNumber = friend.phoneNumber,
+            status = Participant.STATUS_INVITED
+        )
+        addParticipantIfNotExists(newParticipant)
+    }
+
+    fun onAddUser(user: com.example.tripexpensetracker.data.model.User) {
+        val newParticipant = Participant(
+            name = user.displayName ?: user.phone,
+            userId = user.uid,
+            phoneNumber = user.phone,
+            status = Participant.STATUS_INVITED
+        )
+        addParticipantIfNotExists(newParticipant)
+    }
+
+    fun onAddManualParticipant(name: String, phone: String?) {
+        val newParticipant = Participant(
+            name = name.trim(),
+            phoneNumber = phone?.ifBlank { null }
+        )
+        addParticipantIfNotExists(newParticipant)
     }
 
     private val _tripName = kotlinx.coroutines.flow.MutableStateFlow("")
@@ -46,6 +160,17 @@ class AddEditTripViewModel @Inject constructor(
          }
     }
 
+    private fun addParticipantIfNotExists(participant: Participant) {
+        // Avoid duplicates checking name+phone OR userId
+        val exists = _participants.value.any { 
+            (it.userId != null && it.userId == participant.userId) || 
+            (it.name.equals(participant.name, ignoreCase = true) && it.phoneNumber == participant.phoneNumber) 
+        }
+        if (!exists) {
+            _participants.value += participant
+        }
+    }
+
     private fun loadTrip(id: String) {
         viewModelScope.launch {
             val trip = repository.getTripById(id)
@@ -60,9 +185,9 @@ class AddEditTripViewModel @Inject constructor(
         viewModelScope.launch {
             if (participant.phoneNumber != null) {
                 val users = userRepository.getUsersByPhones(listOf(participant.phoneNumber))
-                val user = users.find { it["phone"] == participant.phoneNumber }
+                val user = users.find { it.phone == participant.phoneNumber }
                 if (user != null) {
-                    onResult(participant.copy(userId = user["uid"] as? String))
+                    onResult(participant.copy(userId = user.uid))
                 } else {
                     onResult(participant)
                 }
@@ -86,12 +211,12 @@ class AddEditTripViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                val currentParticipants = _participants.value
+                val currentParticipants: List<Participant> = _participants.value
                 val currentName = _tripName.value
                 
                 // 1. Identify which participants have phone numbers but no userId
-                val participantsWithPhones = currentParticipants.filter { !it.phoneNumber.isNullOrBlank() && it.userId == null }
-                val phones = participantsWithPhones.mapNotNull { it.phoneNumber }
+                val participantsWithPhones: List<Participant> = currentParticipants.filter { p -> !p.phoneNumber.isNullOrBlank() && p.userId == null }
+                val phones = participantsWithPhones.mapNotNull { p -> p.phoneNumber }
                 
                 // 2. Lookup users by phone
                 val registeredUsers = if (phones.isNotEmpty()) {
@@ -101,54 +226,109 @@ class AddEditTripViewModel @Inject constructor(
                 }
                 
                 // 3. Update participants list with found userIds
-                val updatedParticipants = currentParticipants.map { p ->
+                // 3. Update participants list with found userIds
+                // AND Set Status
+                val currentCreatorId = auth.currentUser?.uid
+                
+                val updatedParticipants: List<Participant> = currentParticipants.map { p: Participant ->
+                    var updatedP = p
                     if (p.phoneNumber != null) {
-                        val user = registeredUsers.find { it["phone"] == p.phoneNumber }
+                        val user = registeredUsers.find { it.phone == p.phoneNumber }
                         if (user != null) {
-                            p.copy(userId = user["uid"] as? String)
-                        } else {
-                            p
+                            updatedP = p.copy(userId = user.uid)
                         }
+                    }
+                    
+                    // Set Status
+                    // If it's me (creator), JOINED.
+                    // If it's another user with ID, INVITED (unless already joined/declined? For new additions, INVITED)
+                    // If it's manual (no ID), JOINED (implicitly managed by creator)
+                    
+                    if (updatedP.userId == currentCreatorId) {
+                         updatedP.copy(status = Participant.STATUS_JOINED)
+                    } else if (updatedP.userId != null) {
+                        // If it's a new trip or they were not previously in it, set to INVITED.
+                        // Ideally we check if they were already there.
+                        // For simplicity in this step: If status is JOINED, keep it. If default/new, set INVITED.
+                         if (updatedP.status == Participant.STATUS_JOINED) {
+                             updatedP
+                         } else {
+                             updatedP.copy(status = Participant.STATUS_INVITED)
+                         }
                     } else {
-                        p
+                        updatedP // Manual entry, status JOINED by default or irrelevant
                     }
                 }
                 
+                // 3.5 Prepare Participant IDs list
+                // Only include JOINED participants in the queryable IDs list.
+                // INVITED participants should not see the trip in "My Trips" until they accept.
+                val participantIds = updatedParticipants
+                    .filter { it.status == Participant.STATUS_JOINED }
+                    .mapNotNull { it.userId }
+                    .toMutableList()
+                
+                if (currentCreatorId != null && !participantIds.contains(currentCreatorId)) {
+                    participantIds.add(currentCreatorId)
+                }
+
                 // 4. Create or Update Trip
+                val finalTripId: String
                 if (tripId != null) {
+                     finalTripId = tripId!!
                      val existingTrip = repository.getTripById(tripId!!)
                      if (existingTrip != null) {
-                         val trip = existingTrip.copy(name = currentName, participants = updatedParticipants)
+                         val trip = existingTrip.copy(
+                             name = currentName, 
+                             participants = updatedParticipants,
+                             participantIds = participantIds
+                         )
                          repository.updateTrip(trip)
                          
                          val existingPeople = repository.getPeopleForTrip(tripId!!).first()
                          val existingNames = existingPeople.map { it.name }.toSet()
                          
-                         updatedParticipants.forEach { p ->
-                             if (!existingNames.contains(p.name)) {
-                                  repository.insertPerson(Person(
+                          for (p in updatedParticipants) {
+                              if (!existingNames.contains(p.name)) {
+                                   repository.insertPerson(Person(
                                     tripId = tripId!!, 
                                     name = p.name,
                                     userId = p.userId,
                                     phoneNumber = p.phoneNumber
                                 ))
-                             }
-                         }
+                              }
+                          }
                      }
                 } else {
                     // INSERT NEW
-                    val trip = Trip(name = currentName, participants = updatedParticipants)
-                    val newTripId = repository.insertTrip(trip)
+                    val trip = Trip(
+                        name = currentName, 
+                        participants = updatedParticipants,
+                        participantIds = participantIds
+                    )
+                    finalTripId = repository.insertTrip(trip)
                     
-                    updatedParticipants.forEach { participant ->
+                    for (participant in updatedParticipants) {
                         repository.insertPerson(Person(
-                            tripId = newTripId, 
+                            tripId = finalTripId, 
                             name = participant.name,
                             userId = participant.userId,
                             phoneNumber = participant.phoneNumber
                         ))
                     }
                 }
+                
+                // 5. Send Invitations
+                // Iterate through updatedParticipants. If status is INVITED and userId != null, send invite.
+                // Optimally we only send if they weren't invited before. 
+                // For MVP, sending duplicate invites is handled by Firestore (new doc). Ideally we check.
+                // Let's send invite.
+                updatedParticipants.forEach { p ->
+                    if (p.status == Participant.STATUS_INVITED && p.userId != null && p.userId != currentCreatorId) {
+                         repository.inviteUserToTrip(finalTripId, currentName, p.userId)
+                    }
+                }
+
                 _uiState.value = UiState.Success
                 onSuccess()
             } catch (e: Exception) {

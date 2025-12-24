@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,11 +36,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddEditTripScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToTripDetails: (String) -> Unit,
     viewModel: AddEditTripViewModel = hiltViewModel()
 ) {
     val tripName by viewModel.tripName.collectAsState()
     val participants by viewModel.participants.collectAsState()
-    var participantName by remember { mutableStateOf("") }
+    var showFriendSelector by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -126,43 +128,26 @@ fun AddEditTripScreen(
 
             Text("Participants", style = MaterialTheme.typography.titleMedium)
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = participantName,
-                    enabled = uiState !is AddEditTripViewModel.UiState.Loading,
-                    onValueChange = { participantName = it },
-                    label = { Text("Name (Manual)") },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    enabled = uiState !is AddEditTripViewModel.UiState.Loading,
-                    onClick = {
-                    if (participantName.isNotBlank()) {
-                        viewModel.onAddParticipant(Participant(name = participantName.trim()))
-                        participantName = ""
-                    }
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Participant")
-                }
-            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Participants", style = MaterialTheme.typography.titleMedium)
             
+            // Unified "Add People" Button
             Button(
-                onClick = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-                        contactLauncher.launch(null)
-                    } else {
-                        requestPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-                    }
-                },
+                onClick = { showFriendSelector = true },
                 enabled = uiState !is AddEditTripViewModel.UiState.Loading,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             ) {
-                Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Add from Contacts")
+                Text("Add People")
+            }
+
+            if (showFriendSelector) {
+                ParticipantSelectionSheet(
+                    onDismissRequest = { showFriendSelector = false },
+                    viewModel = viewModel
+                )
             }
 
             LazyColumn(modifier = Modifier.weight(1f)) {

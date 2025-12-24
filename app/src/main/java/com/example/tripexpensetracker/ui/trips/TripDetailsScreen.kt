@@ -1,23 +1,30 @@
 package com.example.tripexpensetracker.ui.trips
 
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.tripexpensetracker.data.model.Expense
-import java.text.NumberFormat
-import androidx.compose.animation.AnimatedVisibility
 import com.example.tripexpensetracker.ui.common.PieChart
+import kotlinx.coroutines.launch
+import java.text.NumberFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,18 +34,32 @@ fun TripDetailsScreen(
     onAddExpenseClick: (String) -> Unit,
     onSettleClick: (String) -> Unit,
     onEditTripClick: (String) -> Unit,
+    onNavigateToCityDetails: (String) -> Unit = {}, // Navigate to city details
     viewModel: TripDetailsViewModel = hiltViewModel()
 ) {
-    // LaunchedEffect removed as ViewModel handles init via SavedStateHandle
-
     val trip by viewModel.trip.collectAsState()
     val expenses by viewModel.expenses.collectAsState(initial = emptyList())
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val approved by viewModel.approvedParticipants.collectAsState()
+    val pending by viewModel.pendingParticipants.collectAsState()
+    val destinations by viewModel.destinations.collectAsState()
+    val itineraryItems by viewModel.itineraryItems.collectAsState()
+    val people by viewModel.people.collectAsState()
+    
+    // Active city tracking
+    val activeCityId by viewModel.activeCityId.collectAsState()
+    val activeCityName by viewModel.activeCityName.collectAsState()
+    val activeTripId by viewModel.activeTripId.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     
     var showDeleteDialog by remember { mutableStateOf(false) }
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
-    
     var showDeleteTripDialog by remember { mutableStateOf(false) }
+    
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Expenses", "Itinerary")
 
     if (showDeleteDialog && expenseToDelete != null) {
         AlertDialog(
@@ -89,6 +110,60 @@ fun TripDetailsScreen(
         )
     }
 
+    var showAddChoice by remember { mutableStateOf(false) }
+    var showAddDestination by remember { mutableStateOf(false) }
+    var showAddActivity by remember { mutableStateOf(false) }
+
+    if (showAddChoice) {
+        AlertDialog(
+            onDismissRequest = { showAddChoice = false },
+            title = { Text("Add to Itinerary") },
+            text = { Text("What would you like to add?") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showAddChoice = false
+                    showAddDestination = true 
+                }) { Text("Destination (City)") }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showAddChoice = false
+                    showAddActivity = true 
+                }) { Text("Activity") }
+            }
+        )
+    }
+
+    if (showAddDestination) {
+        AddDestinationDialog(
+            onDismiss = { showAddDestination = false },
+            onConfirm = { name, start, end ->
+                viewModel.addDestination(com.example.tripexpensetracker.data.model.Destination(
+                    name = name,
+                    startDate = start,
+                    endDate = end
+                ))
+                showAddDestination = false
+            }
+        )
+    }
+
+    if (showAddActivity) {
+        AddActivityDialog(
+            destinations = destinations,
+            onDismiss = { showAddActivity = false },
+            onConfirm = { title, desc, time, type ->
+                viewModel.addItineraryItem(com.example.tripexpensetracker.data.model.ItineraryItem(
+                    title = title,
+                    description = desc,
+                    startTime = time,
+                    type = type
+                ))
+                showAddActivity = false
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -99,6 +174,18 @@ fun TripDetailsScreen(
                     }
                 },
                 actions = {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    IconButton(onClick = {
+                        val sendIntent: android.content.Intent = android.content.Intent().apply {
+                            action = android.content.Intent.ACTION_SEND
+                            putExtra(android.content.Intent.EXTRA_TEXT, "Join my trip on Trip Expense Tracker: tripexpensetracker://invite/$tripId")
+                            type = "text/plain"
+                        }
+                        val shareIntent = android.content.Intent.createChooser(sendIntent, null)
+                        context.startActivity(shareIntent)
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Share Trip")
+                    }
                     IconButton(onClick = { onEditTripClick(tripId) }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit Trip")
                     }
@@ -118,12 +205,166 @@ fun TripDetailsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { onAddExpenseClick(tripId) }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Expense")
+            if (selectedTab == 0) {
+                FloatingActionButton(onClick = { onAddExpenseClick(tripId) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Expense")
+                }
+            } else {
+                 FloatingActionButton(onClick = { showAddChoice = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Item")
+                }
             }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            // Trip Summary Card
+            item {
+                TripSummaryCard(
+                    expenses = expenses,
+                    destinations = destinations
+                )
+            }
+            
+            // Cities Section Header
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Cities",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TextButton(onClick = { showAddDestination = true }) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add City")
+                    }
+                }
+            }
+            
+            // City Cards
+            if (destinations.isEmpty()) {
+                item {
+                    EmptyCitiesState(onAddCity = { showAddDestination = true })
+                }
+            } else {
+                items(destinations.size) { index ->
+                    val destination = destinations[index]
+                    var cityStats by remember { mutableStateOf(com.example.tripexpensetracker.data.model.CityStats()) }
+                    
+                    LaunchedEffect(destination.id, expenses, itineraryItems) {
+                        cityStats = viewModel.getCityStats(destination.id)
+                    }
+                    
+                    val isThisCityActive = activeCityId == destination.id
+                    val isAnotherCityActive = activeCityId != null && activeCityId != destination.id
+                    
+                    com.example.tripexpensetracker.ui.common.CityCard(
+                        destination = destination,
+                        stats = cityStats,
+                        isActive = isThisCityActive,
+                        isLocked = isAnotherCityActive,
+                        activeCityName = activeCityName,
+                        onClick = {
+                            when {
+                                isThisCityActive -> {
+                                    // Already visiting this city, navigate to it
+                                    onNavigateToCityDetails(destination.id)
+                                }
+                                isAnotherCityActive -> {
+                                    // Show warning: need to end current visit first
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "End your visit to $activeCityName first"
+                                        )
+                                    }
+                                }
+                                else -> {
+                                    // Start visit and navigate
+                                    viewModel.startCityVisit(destination.id, destination.name)
+                                    onNavigateToCityDetails(destination.id)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            
+            // Expenses Overview Section
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "All Expenses",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        "${expenses.size} total",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            // Inline expense items (not nested scrollable)
+            if (expenses.isEmpty()) {
+                item {
+                    Text(
+                        "No expenses yet. Tap + to add one!",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 32.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                items(expenses.size) { index ->
+                    val expense = expenses[index]
+                    ExpenseItem(
+                        expense = expense,
+                        onDeleteClick = { 
+                            expenseToDelete = expense
+                            showDeleteDialog = true
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ExpensesTabContent(
+    expenses: List<Expense>,
+    people: List<com.example.tripexpensetracker.data.model.Person>,
+    approvedParticipants: List<com.example.tripexpensetracker.data.model.Participant>,
+    pendingParticipants: List<com.example.tripexpensetracker.data.model.Participant>,
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit,
+    onResendInvite: (com.example.tripexpensetracker.data.model.Participant) -> Unit,
+    onDeleteExpense: (Expense) -> Unit
+) {
+    var showChart by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 80.dp)
+    ) {
+        item {
             // Summary Card
             Card(
                 modifier = Modifier
@@ -140,11 +381,11 @@ fun TripDetailsScreen(
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
+            }
+        }
 
-            // Insights Section
-            var showChart by remember { mutableStateOf(false) }
-            
-            OutlinedButton(
+        item {
+             OutlinedButton(
                 onClick = { showChart = !showChart },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             ) {
@@ -176,45 +417,149 @@ fun TripDetailsScreen(
                         } else {
                             Text("No expenses to show.")
                         }
+                        
+                        // Member Spending Section
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text("Expenses by Member", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        val memberSpending = expenses.groupBy { it.paidByPersonId }
+                            .mapKeys { (personId, _) -> 
+                                people.find { it.id == personId }?.name ?: "Unknown"
+                            }
+                            .mapValues { (_, list) -> list.sumOf { it.amount } }
+                        
+                        if (memberSpending.isNotEmpty()) {
+                            com.example.tripexpensetracker.ui.common.BarChart(
+                                data = memberSpending,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text("No member data available.")
+                        }
                     }
                 }
             }
-            }
+        }
 
+        item {
+            // Participants Section
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                 Column(modifier = Modifier.padding(16.dp)) {
+                     Text("Participants", style = MaterialTheme.typography.titleMedium)
+                     Spacer(modifier = Modifier.height(8.dp))
+                     
+                     if (pendingParticipants.isNotEmpty()) {
+                         Text("Pending Approval", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                         pendingParticipants.forEach { p ->
+                             Row(
+                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                             ) {
+                                 Text(p.name, style = MaterialTheme.typography.bodyMedium)
+                                 TextButton(onClick = { onResendInvite(p) }) {
+                                     Text("Resend")
+                                 }
+                             }
+                         }
+                         Divider(modifier = Modifier.padding(vertical = 8.dp))
+                     }
+                     
+                     if (approvedParticipants.isNotEmpty()) {
+                         Text("Going", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                         approvedParticipants.forEach { p ->
+                             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                 Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                 Spacer(modifier = Modifier.width(8.dp))
+                                 Text(p.name, style = MaterialTheme.typography.bodyMedium)
+                             }
+                         }
+                     }
+                 }
+            }
+        }
+
+        item {
             Text(
                 "Expenses",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
+        }
 
-            // Category Filter
-            val categories = listOf("All", "Food", "Transport", "Lodging", "Entertainment", "General")
-            androidx.compose.foundation.lazy.LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                 items(categories.size) { index ->
-                     val cat = categories[index]
-                     FilterChip(
-                         selected = selectedCategory == cat,
-                         onClick = { viewModel.onCategorySelected(cat) },
-                         label = { Text(cat) }
-                     )
+        item {
+             val categories = listOf("All", "Food", "Transport", "Lodging", "Entertainment", "General")
+             androidx.compose.foundation.lazy.LazyRow(
+                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+             ) {
+                  items(categories.size) { index ->
+                      val cat = categories[index]
+                      FilterChip(
+                          selected = selectedCategory == cat,
+                          onClick = { onCategorySelected(cat) },
+                          label = { Text(cat) }
+                      )
+                  }
+             }
+        }
+
+        items(expenses) { expense ->
+             ExpenseItem(
+                 expense = expense,
+                 onDeleteClick = { onDeleteExpense(expense) }
+             )
+        }
+    }
+}
+
+@Composable
+fun ItineraryTabContent(
+    destinations: List<com.example.tripexpensetracker.data.model.Destination>,
+    itineraryItems: List<com.example.tripexpensetracker.data.model.ItineraryItem>
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        if (destinations.isEmpty() && itineraryItems.isEmpty()) {
+             item {
+                 Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                     Text("No itinerary items yet. Start planning!", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                  }
+             }
+        } else {
+            item { Text("Destinations", style = MaterialTheme.typography.titleLarge) }
+            items(destinations) { dest ->
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(dest.name, style = MaterialTheme.typography.titleMedium)
+                        Text("Start: ${java.text.DateFormat.getDateInstance().format(java.util.Date(dest.startDate))}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                items(expenses) { expense ->
-                    ExpenseItem(
-                        expense = expense,
-                        onDeleteClick = {
-                            expenseToDelete = expense
-                            showDeleteDialog = true
-                        }
-                    )
+            
+            item { 
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Activities", style = MaterialTheme.typography.titleLarge) 
+            }
+            items(itineraryItems) { item ->
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                     ListItem(
+                         headlineContent = { Text(item.title) },
+                         supportingContent = { Text(item.description) },
+                         leadingContent = { 
+                             val icon = when(item.type) {
+                                 com.example.tripexpensetracker.data.model.ItineraryItem.Companion.TYPE_FLIGHT -> "✈️"
+                                 else -> "📍"
+                             }
+                             Text(icon)
+                         }
+                     )
                 }
             }
         }
@@ -255,4 +600,74 @@ fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit) {
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
     )
     Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+}
+
+@Composable
+fun TripSummaryCard(
+    expenses: List<Expense>,
+    destinations: List<com.example.tripexpensetracker.data.model.Destination>
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "Total Trip Expenses",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    NumberFormat.getCurrencyInstance().format(expenses.sumOf { it.amount }),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "${destinations.size} ${if (destinations.size == 1) "city" else "cities"} • ${expenses.size} expenses",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyCitiesState(onAddCity: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("🗺️", style = MaterialTheme.typography.displayMedium)
+        Text(
+            "No cities added yet",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Start planning by adding cities to your trip",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(onClick = onAddCity) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Add Your First City")
+        }
+    }
 }

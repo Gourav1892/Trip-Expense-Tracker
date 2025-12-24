@@ -19,18 +19,31 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddEditExpenseScreen(
     tripId: String,
+    destinationId: String? = null, // Pre-selected city from navigation
     onNavigateBack: () -> Unit,
     viewModel: AddEditExpenseViewModel = hiltViewModel()
 ) {
     // LaunchedEffect removed as ViewModel handles init via SavedStateHandle
 
     val people by viewModel.people.collectAsState(initial = emptyList())
+    val destinations by viewModel.destinations.collectAsState(initial = emptyList())
 
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("General") }
     var selectedPayer by remember { mutableStateOf<Person?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    
+    // City selection
+    var selectedDestination by remember { mutableStateOf<com.example.tripexpensetracker.data.model.Destination?>(null) }
+    var cityExpanded by remember { mutableStateOf(false) }
+    
+    // Pre-select city when loading from navigation
+    LaunchedEffect(destinationId, destinations) {
+        if (destinationId != null && selectedDestination == null && destinations.isNotEmpty()) {
+            selectedDestination = destinations.find { it.id == destinationId }
+        }
+    }
 
     var splitType by remember { mutableStateOf(SplitType.EQUAL) }
     // Map of PersonId to Amount String
@@ -127,7 +140,17 @@ fun AddEditExpenseScreen(
                                 }
                             }
 
-                            viewModel.saveExpense(tripId, title, amountValue, selectedPayer!!.id, splitType, sharesMap, selectedForSplit, category) {
+                            viewModel.saveExpense(
+                                tripId = tripId, 
+                                title = title, 
+                                amount = amountValue, 
+                                paidByPersonId = selectedPayer!!.id, 
+                                splitType = splitType, 
+                                shares = sharesMap, 
+                                selectedPersonIds = selectedForSplit, 
+                                category = category,
+                                destinationId = selectedDestination?.id ?: ""
+                            ) {
                                 onNavigateBack()
                             }
                         },
@@ -205,36 +228,40 @@ fun AddEditExpenseScreen(
             // ExposedDropdownMenuBox implementation
             ExposedDropdownMenuBox(
                 expanded = expanded,
-                onExpandedChange = { if (isFormEnabled) expanded = !expanded },
+                onExpandedChange = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
-                    value = selectedPayer?.name ?: "Select Payer",
-                    enabled = isFormEnabled,
+                    value = if (people.isEmpty()) "Loading..." else (selectedPayer?.name ?: "Select Payer"),
+                    enabled = people.isNotEmpty() && isFormEnabled,
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Paid By") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    trailingIcon = { 
+                        if (people.isEmpty()) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(), 
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                 )
 
-                if (people.isNotEmpty()) {
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        people.forEach { person ->
-                            DropdownMenuItem(
-                                text = { Text(person.name) },
-                                onClick = {
-                                    selectedPayer = person
-                                    expanded = false
-                                }
-                            )
-                        }
+                ExposedDropdownMenu(
+                    expanded = expanded && people.isNotEmpty(),
+                    onDismissRequest = { expanded = false }
+                ) {
+                    people.forEach { person ->
+                        DropdownMenuItem(
+                            text = { Text(person.name) },
+                            onClick = {
+                                selectedPayer = person
+                                expanded = false
+                            }
+                        )
                     }
                 }
             }
@@ -257,6 +284,51 @@ fun AddEditExpenseScreen(
             )
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // City/Destination Selector
+            if (destinations.isNotEmpty()) {
+                Text("City/Destination:", style = MaterialTheme.typography.labelLarge)
+                ExposedDropdownMenuBox(
+                    expanded = cityExpanded,
+                    onExpandedChange = { cityExpanded = !cityExpanded },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = selectedDestination?.name ?: "Select City (Optional)",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("City") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cityExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = cityExpanded,
+                        onDismissRequest = { cityExpanded = false }
+                    ) {
+                        // Option to clear selection
+                        DropdownMenuItem(
+                            text = { Text("No City (General)") },
+                            onClick = {
+                                selectedDestination = null
+                                cityExpanded = false
+                            }
+                        )
+                        destinations.forEach { dest ->
+                            DropdownMenuItem(
+                                text = { Text(dest.name) },
+                                onClick = {
+                                    selectedDestination = dest
+                                    cityExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // Categories
             Text("Category:", style = MaterialTheme.typography.labelLarge)

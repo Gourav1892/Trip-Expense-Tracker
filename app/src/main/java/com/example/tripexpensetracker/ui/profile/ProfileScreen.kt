@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 @Composable
 fun ProfileScreen(
     onSignOut: () -> Unit,
+    onMyFriendsClick: () -> Unit,
+    onFindFriendsClick: () -> Unit,
     onChangePassword: () -> Unit,
     onNavigateBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
@@ -90,7 +92,25 @@ fun ProfileScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+
+            OutlinedButton(
+                onClick = onMyFriendsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("My Friends")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = onFindFriendsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Find Friends from Contacts")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedButton(
                 onClick = onChangePassword,

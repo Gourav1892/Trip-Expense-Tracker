@@ -8,8 +8,8 @@ import androidx.compose.material.icons.Icons
 
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Notifications
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -35,12 +35,14 @@ import androidx.compose.material.pullrefresh.rememberPullRefreshState
 fun TripListScreen(
     onAddTripClick: () -> Unit,
     onProfileClick: () -> Unit,
+    onNotificationsClick: () -> Unit,
     onTripClick: (String) -> Unit,
     viewModel: TripListViewModel = hiltViewModel()
 ) {
 
     val trips by viewModel.trips.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val invitationCount by viewModel.invitationCount.collectAsState()
     
     @OptIn(ExperimentalMaterialApi::class)
     val pullRefreshState = rememberPullRefreshState(isRefreshing, { viewModel.refresh() })
@@ -82,6 +84,15 @@ fun TripListScreen(
                 ),
 
                 actions = {
+                    IconButton(onClick = onNotificationsClick) {
+                        if (invitationCount > 0) {
+                            BadgedBox(badge = { Badge { Text(invitationCount.toString()) } }) {
+                                Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                            }
+                        } else {
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                        }
+                    }
                     IconButton(onClick = onProfileClick) {
                         Icon(Icons.Default.Person, contentDescription = "Profile")
                     }

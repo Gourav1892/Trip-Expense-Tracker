@@ -11,6 +11,11 @@ import com.google.firebase.firestore.toObjects
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
@@ -32,6 +37,10 @@ class TripRepository @Inject constructor(
             .orderBy("startDate", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects<Trip>() }
+            .catch { e -> 
+                Log.e(TAG, "Error fetching trips. Likely missing Index. Check log for link.", e)
+                emit(emptyList())
+            }
     }
     
     suspend fun getTripById(tripId: String): Trip? {
@@ -209,4 +218,333 @@ class TripRepository @Inject constructor(
                 }
             }
     }
+
+    // Invitation Operations
+    suspend fun inviteUserToTrip(tripId: String, tripName: String, inviteeId: String) {
+        val inviterId = auth.currentUser?.uid ?: return
+        // Get inviter name? For now, we might not have it easily available without fetching user.
+        // Or we could pass it from UI. Let's assume we can fetch or pass it. 
+        // For simplicity, fetching current user profile is better.
+        val inviterName = try {
+             firestore.collection("users").document(inviterId).get().await().getString("displayName") ?: "A friend"
+        } catch (e: Exception) { "A friend" }
+
+        val invitation = com.example.tripexpensetracker.data.model.Invitation(
+            tripId = tripId,
+            tripName = tripName,
+            inviterName = inviterName,
+            inviterId = inviterId,
+            inviteeId = inviteeId
+        )
+        
+        // Save invitation to invitee's collection
+        val docRef = firestore.collection("users").document(inviteeId).collection("invitations").document()
+        docRef.set(invitation.copy(id = docRef.id)).await()
+    }
+
+    fun getInvitations(): Flow<List<com.example.tripexpensetracker.data.model.Invitation>> {
+        val userId = auth.currentUser?.uid ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return firestore.collection("users").document(userId).collection("invitations")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot -> snapshot.toObjects<com.example.tripexpensetracker.data.model.Invitation>() }
+    }
+
+    suspend fun respondToInvitation(invitation: com.example.tripexpensetracker.data.model.Invitation, accept: Boolean) {
+        val userId = auth.currentUser?.uid ?: return
+        
+        if (accept) {
+            // 1. Add user to Trip's participant list (or update status if already there)
+            val tripRef = firestore.collection("trips").document(invitation.tripId)
+            
+            firestore.runBatch { batch ->
+                // We can't easily "update item in list" with arrayUnion if it's a complex object that changed (status).
+                // So we need to read modify write.
+                // But runBatch doesn't read.
+                // We should use transaction or just read-modify-write.
+                // Transaction is safer.
+            }.await() // Placeholder for batch, doing transaction below
+            
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(tripRef)
+                val trip = snapshot.toObject(Trip::class.java) ?: return@runTransaction
+                
+                val currentParticipants = trip.participants.toMutableList()
+                val existingIndex = currentParticipants.indexOfFirst { it.userId == userId }
+                
+                val userPhone = auth.currentUser?.phoneNumber // Might need to fetch User object if phone is needed and missing
+                
+                if (existingIndex != null && existingIndex >= 0) {
+                     // Update status
+                     currentParticipants[existingIndex] = currentParticipants[existingIndex].copy(
+                         status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
+                     )
+                } else {
+                    // Add new
+                    // Fetch name?
+                    currentParticipants.add(
+                        com.example.tripexpensetracker.data.model.Participant(
+                            name = "Joined User", // Ideally fetch real name
+                            userId = userId,
+                            phoneNumber = userPhone,
+                            status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
+                        )
+                    )
+                }
+                
+                val currentIds = trip.participantIds.toMutableList()
+                if (!currentIds.contains(userId)) {
+                    currentIds.add(userId)
+                }
+
+                transaction.update(tripRef, "participants", currentParticipants)
+                transaction.update(tripRef, "participantIds", currentIds)
+                
+                // Delete invitation
+                transaction.delete(firestore.collection("users").document(userId).collection("invitations").document(invitation.id))
+            }.await()
+            
+            // Subscribe to topic
+            subscribeToTripTopic(invitation.tripId)
+            
+            // Notify Inviter that user accepted
+            if (invitation.inviterId.isNotEmpty()) {
+                val acceptanceNotif = invitation.copy(
+                    id = "", // New ID
+                    type = com.example.tripexpensetracker.data.model.Invitation.TYPE_ACCEPTANCE_INFO,
+                    message = "${auth.currentUser?.displayName ?: "A user"} accepted your invite to ${invitation.tripName}",
+                    inviteeId = invitation.inviterId, // Sending TO the inviter
+                    inviterId = userId, // Coming FROM the acceptor
+                    timestamp = java.util.Date()
+                )
+                
+                val notifRef = firestore.collection("users").document(invitation.inviterId).collection("invitations").document()
+                notifRef.set(acceptanceNotif.copy(id = notifRef.id))
+            }
+
+        } else {
+            // If it's just an info notification, we simply delete it
+            if (invitation.type == com.example.tripexpensetracker.data.model.Invitation.TYPE_ACCEPTANCE_INFO || 
+                invitation.type == com.example.tripexpensetracker.data.model.Invitation.TYPE_DECLINE_INFO) {
+                 firestore.collection("users").document(userId).collection("invitations").document(invitation.id).delete().await()
+                 return
+            }
+
+            // Just delete invitation and potentially remove from participant list if they were effectively there?
+            // If they reject, we should probably update status to DECLINED in trip so inviter knows.
+            val tripRef = firestore.collection("trips").document(invitation.tripId)
+             firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(tripRef)
+                val trip = snapshot.toObject(Trip::class.java)
+                
+                if (trip != null) {
+                    val currentParticipants = trip.participants.toMutableList()
+                    val existingIndex = currentParticipants.indexOfFirst { it.userId == userId }
+                     if (existingIndex >= 0) {
+                         currentParticipants[existingIndex] = currentParticipants[existingIndex].copy(
+                             status = com.example.tripexpensetracker.data.model.Participant.STATUS_DECLINED
+                         )
+                         transaction.update(tripRef, "participants", currentParticipants)
+                     }
+                }
+                 // Delete invitation
+                transaction.delete(firestore.collection("users").document(userId).collection("invitations").document(invitation.id))
+             }.await()
+             
+             // Notify Inviter that user declined
+             if (invitation.inviterId.isNotEmpty()) {
+                val declineNotif = invitation.copy(
+                    id = "", // New ID
+                    type = com.example.tripexpensetracker.data.model.Invitation.TYPE_DECLINE_INFO,
+                    message = "${auth.currentUser?.displayName ?: "A user"} declined your invite to ${invitation.tripName}",
+                    inviteeId = invitation.inviterId, // Sending TO the inviter
+                    inviterId = userId, // Coming FROM the decliner
+                    timestamp = java.util.Date()
+                )
+                
+                val notifRef = firestore.collection("users").document(invitation.inviterId).collection("invitations").document()
+                notifRef.set(declineNotif.copy(id = notifRef.id)).await()
+            }
+        }
+    }
+    
+    suspend fun resendInvitation(tripId: String, tripName: String, inviteeId: String) {
+        inviteUserToTrip(tripId, tripName, inviteeId)
+    }
+
+    suspend fun joinTrip(tripId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        val userPhone = auth.currentUser?.phoneNumber
+        val tripRef = firestore.collection("trips").document(tripId)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(tripRef)
+            val trip = snapshot.toObject(Trip::class.java) ?: return@runTransaction
+
+            val currentParticipants = trip.participants.toMutableList()
+            val existingIndex = currentParticipants.indexOfFirst { it.userId == userId }
+
+            if (existingIndex >= 0) {
+                // Already there, ensure joined status
+                if (currentParticipants[existingIndex].status != com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED) {
+                    currentParticipants[existingIndex] = currentParticipants[existingIndex].copy(
+                        status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
+                    )
+                }
+            } else {
+                // Add new
+                currentParticipants.add(
+                    com.example.tripexpensetracker.data.model.Participant(
+                        name = "Joined User", // Ideally fetch real name or pass it
+                        userId = userId,
+                        phoneNumber = userPhone,
+                        status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
+                    )
+                )
+            }
+
+            val currentIds = trip.participantIds.toMutableList()
+            if (!currentIds.contains(userId)) {
+                currentIds.add(userId)
+            }
+
+            transaction.update(tripRef, "participants", currentParticipants)
+            transaction.update(tripRef, "participantIds", currentIds)
+            
+            // Clean up any pending invites if they existed
+            // (invitation collection is under user doc, we can delete it outside transaction or separately)
+        }.await()
+        
+        subscribeToTripTopic(tripId)
+        
+        // Cleanup invites (best effort)
+        try {
+            val invites = firestore.collection("users").document(userId).collection("invitations")
+                .whereEqualTo("tripId", tripId)
+                .get().await()
+            for (doc in invites.documents) {
+                doc.reference.delete()
+            }
+        } catch (e: Exception) { Log.w(TAG, "Failed to cleanup invites after join", e) }
+    }
+
+    // Destination Management
+    suspend fun addDestination(tripId: String, destination: com.example.tripexpensetracker.data.model.Destination) {
+        val ref = firestore.collection("trips").document(tripId).collection("destinations").document()
+        val newDest = destination.copy(id = ref.id, tripId = tripId)
+        ref.set(newDest).await()
+    }
+
+    fun getDestinationsFlow(tripId: String): Flow<List<com.example.tripexpensetracker.data.model.Destination>> = callbackFlow {
+        val listener = firestore.collection("trips").document(tripId).collection("destinations")
+            .orderBy("startDate")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val destinations = snapshot?.toObjects(com.example.tripexpensetracker.data.model.Destination::class.java) ?: emptyList()
+                trySend(destinations)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    // Itinerary Management
+    suspend fun addItineraryItem(tripId: String, item: com.example.tripexpensetracker.data.model.ItineraryItem) {
+        val ref = firestore.collection("trips").document(tripId).collection("itinerary").document()
+        val newItem = item.copy(id = ref.id, tripId = tripId)
+        ref.set(newItem).await()
+    }
+
+    fun getItineraryItemsFlow(tripId: String): Flow<List<com.example.tripexpensetracker.data.model.ItineraryItem>> = callbackFlow {
+        val listener = firestore.collection("trips").document(tripId).collection("itinerary")
+            .orderBy("startTime")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val items = snapshot?.toObjects(com.example.tripexpensetracker.data.model.ItineraryItem::class.java) ?: emptyList()
+                trySend(items)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    // City-specific methods for integrated timeline view
+    
+    /**
+     * Get all timeline items (expenses + activities) for a specific city, sorted chronologically
+     */
+    fun getCityTimelineItems(tripId: String, destinationId: String): Flow<List<com.example.tripexpensetracker.data.model.TimelineItem>> {
+        return combine(
+            getExpensesForTrip(tripId),
+            getItineraryItemsFlow(tripId)
+        ) { expenses, activities ->
+            val items = mutableListOf<com.example.tripexpensetracker.data.model.TimelineItem>()
+            
+            // Filter and convert expenses
+            expenses
+                .filter { it.destinationId == destinationId }
+                .forEach { expense ->
+                    items.add(com.example.tripexpensetracker.data.model.TimelineItem.ExpenseItem(
+                        id = expense.id,
+                        timestamp = expense.date.time,
+                        expense = expense
+                    ))
+                }
+            
+            // Filter and convert activities
+            activities
+                .filter { it.destinationId == destinationId }
+                .forEach { activity ->
+                    items.add(com.example.tripexpensetracker.data.model.TimelineItem.ActivityItem(
+                        id = activity.id,
+                        timestamp = activity.startTime,
+                        activity = activity
+                    ))
+                }
+            
+            // Sort by timestamp
+            items.sortedBy { it.timestamp }
+        }
+    }
+    
+    /**
+     * Calculate statistics for a specific city
+     */
+    suspend fun getCityStats(tripId: String, destinationId: String): com.example.tripexpensetracker.data.model.CityStats {
+        val expenses = getExpensesForTrip(tripId).first().filter { it.destinationId == destinationId }
+        val activities = getItineraryItemsFlow(tripId).first().filter { it.destinationId == destinationId }
+        
+        val totalExpenses = expenses.sumOf { it.amount }
+        val topCategory = expenses
+            .groupBy { it.category }
+            .maxByOrNull { it.value.size }
+            ?.key ?: ""
+        
+        val allTimestamps = expenses.map { it.date } + activities.map { java.util.Date(it.startTime) }
+        val dateRange = if (allTimestamps.isNotEmpty()) {
+            Pair(allTimestamps.minOrNull(), allTimestamps.maxOrNull())
+        } else {
+            Pair(null, null)
+        }
+        
+        return com.example.tripexpensetracker.data.model.CityStats(
+            totalExpenses = totalExpenses,
+            expenseCount = expenses.size,
+            activityCount = activities.size,
+            topCategory = topCategory,
+            dateRange = dateRange
+        )
+    }
+    
+    /**
+     * Get expenses filtered by destination
+     */
+    fun getExpensesForDestination(tripId: String, destinationId: String): Flow<List<Expense>> {
+        return getExpensesForTrip(tripId).map { expenses ->
+            expenses.filter { it.destinationId == destinationId }
+        }
+    }
 }
+

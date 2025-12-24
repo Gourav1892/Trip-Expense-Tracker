@@ -12,34 +12,66 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 @HiltViewModel
 class TripDetailsViewModel @Inject constructor(
     private val repository: TripRepository,
+    private val activeCityManager: com.example.tripexpensetracker.data.repository.ActiveCityManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val tripId: String = checkNotNull(savedStateHandle["tripId"])
+    private val _tripId: String = checkNotNull(savedStateHandle["tripId"])
     
-    val trip: StateFlow<Trip?> = repository.getAllTrips() // This is suboptimal, should get single flow from ID
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-        .let { tripsFlow ->
-             // A quick hack to reuse existing flow or we should add getTripByIdFlow to repository
-             // Better: just load it once manually or add flow support for single trip in DAO
-             // For now, let's keep the manual load pattern but safe
-             val flow = kotlinx.coroutines.flow.MutableStateFlow<Trip?>(null)
-             viewModelScope.launch {
-                 flow.value = repository.getTripById(tripId)
-             }
-             flow
+    // Active city tracking
+    val activeCityId = activeCityManager.activeCityId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val activeCityName = activeCityManager.activeCityName
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val activeTripId = activeCityManager.activeTripId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    
+    fun startCityVisit(cityId: String, cityName: String) {
+        viewModelScope.launch {
+            activeCityManager.startCityVisit(_tripId, cityId, cityName)
         }
+    }
+    
+    fun endCityVisit() {
+        viewModelScope.launch {
+            activeCityManager.endCityVisit()
+        }
+    }
+    
+    // Reactive flow for the specific trip
+    val trip: StateFlow<Trip?> = repository.getAllTrips()
+        .map { trips -> trips.find { it.id == _tripId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val approvedParticipants = trip.map { it?.participants?.filter { p -> 
+        p.status == com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED 
+    } ?: emptyList() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pendingParticipants = trip.map { it?.participants?.filter { p -> 
+        p.status == com.example.tripexpensetracker.data.model.Participant.STATUS_INVITED 
+    } ?: emptyList() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Safely initialized flow
     private val _selectedCategory = kotlinx.coroutines.flow.MutableStateFlow("All")
     val selectedCategory: StateFlow<String> = _selectedCategory
 
-    val expenses: StateFlow<List<Expense>> = repository.getExpensesForTrip(tripId)
+    // New Itinerary Streams
+    val destinations = repository.getDestinationsFlow(_tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        
+    val itineraryItems = repository.getItineraryItemsFlow(_tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val people = repository.getPeopleForTrip(_tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val expenses: StateFlow<List<Expense>> = repository.getExpensesForTrip(_tripId)
         .combine(_selectedCategory) { expenses: List<Expense>, category: String ->
             if (category == "All") {
                 expenses
@@ -52,6 +84,18 @@ class TripDetailsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    fun addDestination(destination: com.example.tripexpensetracker.data.model.Destination) {
+        viewModelScope.launch {
+            repository.addDestination(_tripId, destination)
+        }
+    }
+
+    fun addItineraryItem(item: com.example.tripexpensetracker.data.model.ItineraryItem) {
+        viewModelScope.launch {
+            repository.addItineraryItem(_tripId, item)
+        }
+    }
 
     fun onCategorySelected(category: String) {
         _selectedCategory.value = category
@@ -71,5 +115,21 @@ class TripDetailsViewModel @Inject constructor(
                 onSuccess()
             }
         }
+    }
+    
+    fun resendInvite(participant: com.example.tripexpensetracker.data.model.Participant) {
+        viewModelScope.launch {
+            val currentTrip = trip.value ?: return@launch
+            // TODO: Implement resend invitation logic
+            // This would require adding the function to TripRepository
+            android.util.Log.d("TripDetails", "Resend invite requested for ${participant.name}")
+        }
+    }
+    
+    /**
+     * Get statistics for a specific city/destination
+     */
+    suspend fun getCityStats(destinationId: String): com.example.tripexpensetracker.data.model.CityStats {
+        return repository.getCityStats(_tripId, destinationId)
     }
 }

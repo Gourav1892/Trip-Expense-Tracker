@@ -28,6 +28,14 @@ class AddEditExpenseViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+    
+    val destinations: StateFlow<List<com.example.tripexpensetracker.data.model.Destination>> = 
+        repository.getDestinationsFlow(tripId)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
     sealed class UiState {
         object Idle : UiState()
@@ -40,14 +48,15 @@ class AddEditExpenseViewModel @Inject constructor(
     val uiState: StateFlow<UiState> = _uiState
 
     fun saveExpense(
-        tripId: String, 
-        title: String, 
-        amount: Double, 
+        tripId: String,
+        title: String,
+        amount: Double,
         paidByPersonId: String,
         splitType: SplitType,
         shares: Map<String, Double>,
         selectedPersonIds: Set<String>,
         category: String,
+        destinationId: String = "", // City/destination association
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
@@ -106,6 +115,7 @@ class AddEditExpenseViewModel @Inject constructor(
                 repository.insertExpense(
                     Expense(
                         tripId = tripId,
+                        destinationId = destinationId,
                         paidByPersonId = paidByPersonId,
                         title = title,
                         amount = amount,

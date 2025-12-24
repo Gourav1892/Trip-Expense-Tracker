@@ -42,19 +42,71 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun getUsersByPhones(phones: List<String>): List<Map<String, Any>> {
+    suspend fun getUsersByPhones(phones: List<String>): List<User> {
         if (phones.isEmpty()) return emptyList()
-        // Note: Firestore 'in' query supports up to 10 values. 
-        // For production, we would need to batch this.
-        // For this demo, we'll take the first 10 if there are more.
-        val searchChunk = phones.take(10)
+        val allUsers = mutableListOf<User>()
         
+        // Firestore 'in' query supports up to 10 values.
+        val chunks = phones.chunked(10)
+        
+        for (chunk in chunks) {
+            try {
+                val snapshot = firestore.collection("users")
+                    .whereIn("phone", chunk)
+                    .get()
+                    .await()
+                allUsers.addAll(snapshot.toObjects(User::class.java))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // Continue to next chunk even if one fails
+            }
+        }
+        return allUsers
+    }
+
+    /**
+     * Search users by phone number prefix.
+     * Note: Firestore does not support native fuzzy search.
+     * We use startAt/endAt for prefix matching.
+     */
+    suspend fun searchUsers(query: String): List<User> {
+        if (query.length < 3) return emptyList()
+
+        val endQuery = query + "\uf8ff"
+
         return try {
             val snapshot = firestore.collection("users")
-                .whereIn("phone", searchChunk)
+                .orderBy("phone")
+                .startAt(query)
+                .endAt(endQuery)
+                .limit(20)
                 .get()
                 .await()
-            snapshot.documents.mapNotNull { it.data }
+            
+            snapshot.toObjects(User::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    suspend fun searchUsersByName(query: String): List<User> {
+        if (query.length < 3) return emptyList()
+
+        // Normalize casing if needed, but Firestore is case-sensitive by default.
+        // For simple search, we assume exact case or user matches case.
+        val endQuery = query + "\uf8ff"
+
+        return try {
+            val snapshot = firestore.collection("users")
+                .orderBy("displayName")
+                .startAt(query)
+                .endAt(endQuery)
+                .limit(20)
+                .get()
+                .await()
+            
+            snapshot.toObjects(User::class.java)
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()

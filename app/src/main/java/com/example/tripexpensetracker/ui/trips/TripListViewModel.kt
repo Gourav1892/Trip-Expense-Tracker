@@ -16,6 +16,8 @@ import java.util.Date
 import javax.inject.Inject
 import com.example.tripexpensetracker.data.repository.AuthRepository
 
+import kotlinx.coroutines.flow.map
+
 @HiltViewModel
 class TripListViewModel @Inject constructor(
     private val repository: TripRepository,
@@ -41,6 +43,10 @@ class TripListViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val invitationCount = repository.getInvitations()
+        .map { list -> list.size }
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.stateIn(
