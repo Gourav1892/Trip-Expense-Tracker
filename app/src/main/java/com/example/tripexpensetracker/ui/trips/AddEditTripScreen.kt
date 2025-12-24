@@ -182,9 +182,15 @@ fun AddEditTripScreen(
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 itemsIndexed(participants) { index, participant ->
+                    val isPending = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_INVITED
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isPending) 
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f) 
+                            else 
+                                MaterialTheme.colorScheme.surfaceVariant
+                        )
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -193,8 +199,19 @@ fun AddEditTripScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = participant.name, style = MaterialTheme.typography.bodyLarge)
-                                    if (participant.userId != null) {
+                                    Text(
+                                        text = participant.name, 
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (isPending) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isPending) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        androidx.compose.material3.Badge(
+                                            containerColor = MaterialTheme.colorScheme.tertiary
+                                        ) {
+                                            Text("Pending", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    } else if (participant.userId != null) {
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,

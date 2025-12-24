@@ -219,16 +219,19 @@ class AddEditTripViewModel @Inject constructor(
     }
 
     fun onSaveUserAsFriend(user: com.example.tripexpensetracker.data.model.User) {
-        val userId = auth.currentUser?.uid ?: return
+        val currentUserId = auth.currentUser?.uid ?: return
         viewModelScope.launch {
-            val friend = com.example.tripexpensetracker.data.model.Friend(
-                ownerId = userId,
-                name = user.displayName ?: "Unknown",
-                phoneNumber = user.phone,
-                linkedUserId = user.uid
+            // Get current user's info for the request
+            val currentUser = userRepository.getUser(currentUserId).first()
+            
+            val request = com.example.tripexpensetracker.data.model.FriendRequest(
+                senderId = currentUserId,
+                senderName = currentUser?.displayName ?: "Someone",
+                senderPhone = currentUser?.phone,
+                receiverId = user.uid
             )
-            friendRepository.addFriend(userId, friend)
-            loadFriends() // Refresh friends list
+            friendRepository.sendFriendRequest(request)
+            // Note: Friend won't appear in list until recipient accepts
         }
     }
 
