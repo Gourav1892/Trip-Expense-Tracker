@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -164,10 +165,14 @@ fun ParticipantSelectionSheet(
                             )
                         }
                         items(suggestedContacts) { user ->
-                            UserResultItem(user) {
-                                viewModel.onAddUser(user)
-                                onDismissRequest()
-                            }
+                            UserResultItem(
+                                user = user,
+                                onClick = {
+                                    viewModel.onAddUser(user)
+                                    onDismissRequest()
+                                },
+                                onAddToFriends = { viewModel.onSaveUserAsFriend(it) }
+                            )
                         }
                         item { Spacer(modifier = Modifier.height(8.dp)) }
                     }
@@ -206,10 +211,14 @@ fun ParticipantSelectionSheet(
                             )
                         }
                         items(globalResults) { user ->
-                            UserResultItem(user) {
-                                viewModel.onAddUser(user)
-                                onDismissRequest()
-                            }
+                            UserResultItem(
+                                user = user,
+                                onClick = {
+                                    viewModel.onAddUser(user)
+                                    onDismissRequest()
+                                },
+                                onAddToFriends = { viewModel.onSaveUserAsFriend(it) }
+                            )
                         }
                     }
 
@@ -333,22 +342,34 @@ fun FriendResultItem(friend: Friend, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UserResultItem(user: User, onClick: () -> Unit) {
+fun UserResultItem(
+    user: User, 
+    onClick: () -> Unit,
+    onAddToFriends: ((User) -> Unit)? = null
+) {
      Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface) // Different color to distinguish
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Use a specific icon or badge for "Global Search"
-             Icon(Icons.Default.Person, null, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.Person, null, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(text = user.displayName ?: "Unknown", style = MaterialTheme.typography.titleMedium)
                 Text(text = user.phone, style = MaterialTheme.typography.bodySmall)
+            }
+            if (onAddToFriends != null) {
+                IconButton(onClick = { onAddToFriends(user) }) {
+                    Icon(
+                        Icons.Default.PersonAdd, 
+                        contentDescription = "Add to Friends",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

@@ -218,6 +218,22 @@ class AddEditTripViewModel @Inject constructor(
         }
     }
 
+    fun onSaveUserAsFriend(user: com.example.tripexpensetracker.data.model.User) {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            val friend = com.example.tripexpensetracker.data.model.Friend(
+                ownerId = userId,
+                name = user.displayName ?: "Unknown",
+                phoneNumber = user.phone,
+                linkedUserId = user.uid
+            )
+            friendRepository.addFriend(userId, friend)
+            loadFriends() // Refresh friends list
+        }
+    }
+
+
+
     sealed class UiState {
         object Idle : UiState()
         object Loading : UiState()
@@ -333,13 +349,27 @@ class AddEditTripViewModel @Inject constructor(
                     )
                     finalTripId = repository.insertTrip(trip)
                     
-                    for (participant in updatedParticipants) {
+                    // Always add the creator as a Person first (payer option)
+                    if (currentCreatorId != null) {
+                        val creatorUser = userRepository.getUser(currentCreatorId).first()
                         repository.insertPerson(Person(
                             tripId = finalTripId, 
-                            name = participant.name,
-                            userId = participant.userId,
-                            phoneNumber = participant.phoneNumber
+                            name = creatorUser?.displayName ?: "Me",
+                            userId = currentCreatorId,
+                            phoneNumber = creatorUser?.phone
                         ))
+                    }
+                    
+                    // Add other participants as people (skip if same as creator)
+                    for (participant in updatedParticipants) {
+                        if (participant.userId != currentCreatorId) {
+                            repository.insertPerson(Person(
+                                tripId = finalTripId, 
+                                name = participant.name,
+                                userId = participant.userId,
+                                phoneNumber = participant.phoneNumber
+                            ))
+                        }
                     }
                 }
                 

@@ -190,30 +190,11 @@ fun TripDetailsScreen(
                 },
                 actions = {
                     val context = androidx.compose.ui.platform.LocalContext.current
-                    IconButton(onClick = {
-                        val sendIntent: android.content.Intent = android.content.Intent().apply {
-                            action = android.content.Intent.ACTION_SEND
-                            putExtra(android.content.Intent.EXTRA_TEXT, "Join my trip on Trip Expense Tracker: tripexpensetracker://invite/$tripId")
-                            type = "text/plain"
-                        }
-                        val shareIntent = android.content.Intent.createChooser(sendIntent, null)
-                        context.startActivity(shareIntent)
-                    }) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = "Invite Friends")
-                    }
                     IconButton(onClick = { onEditTripClick(tripId) }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit Trip")
                     }
-                    IconButton(onClick = { onNavigateToAnalytics(tripId) }) {
-                        Icon(Icons.Default.DateRange, contentDescription = "Analytics")
-                    }
                     IconButton(onClick = { showDeleteTripDialog = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete Trip")
-                    }
-                    TextButton(onClick = { onSettleClick(tripId) }) {
-                        Icon(Icons.Default.Check, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Settle")
                     }
                     
                     IconButton(onClick = {
@@ -237,6 +218,28 @@ fun TripDetailsScreen(
                 ),
                 scrollBehavior = scrollBehavior
             )
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Menu, contentDescription = null) },
+                    label = { Text("Overview") },
+                    selected = true,
+                    onClick = { /* Already on overview */ }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.DateRange, contentDescription = null) },
+                    label = { Text("Analytics") },
+                    selected = false,
+                    onClick = { onNavigateToAnalytics(tripId) }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Check, contentDescription = null) },
+                    label = { Text("Settle") },
+                    selected = false,
+                    onClick = { onSettleClick(tripId) }
+                )
+            }
         },
         floatingActionButton = {
             if (selectedTab == 0) {
