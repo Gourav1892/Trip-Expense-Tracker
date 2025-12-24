@@ -330,8 +330,10 @@ class AddEditTripViewModel @Inject constructor(
                          val existingPeople = repository.getPeopleForTrip(tripId!!).first()
                          val existingNames = existingPeople.map { it.name }.toSet()
                          
+                         // Only add Person docs for JOINED participants (not pending invites)
                           for (p in updatedParticipants) {
-                              if (!existingNames.contains(p.name)) {
+                              if (!existingNames.contains(p.name) && 
+                                  p.status == Participant.STATUS_JOINED) {
                                    repository.insertPerson(Person(
                                     tripId = tripId!!, 
                                     name = p.name,
