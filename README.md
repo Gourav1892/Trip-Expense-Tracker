@@ -21,8 +21,23 @@ This project is a comprehensive Trip Expense Tracker designed for Android using 
 4.  Connect an Android device or start an Emulator.
 5.  Run the application.
 
+## Features
+*   **Trip Management**: Create trips, add friends, set budgets.
+*   **Expense Tracking**: detailed split options (Equal, Percentage, Shares).
+*   **Settlements**: 
+    *   Automatic debt calculation (Who owes whom).
+    *   **Partial Payments**: Record cash payments ("Settle") to reduce debt instantly.
+*   **Analytics**: Visualize spending by Category or Member.
+*   **City Itinerary**: Plan visits, add destinations, and track expenses per city.
+
+## Download
+The latest debug APK is available in the root directory:
+[Download APK](app-debug.apk)
+
 ## Current Status
-*   [ ] Project Structure Initialized
-*   [ ] Core Database Models (Trip, Expense, User)
-*   [ ] Repositories & Business Logic
-*   [ ] UI Screens (Compose)
+*   [x] Project Structure Initialized
+*   [x] Core Database Models (Trip, Expense, User)
+*   [x] Repositories & Business Logic
+*   [x] UI Screens (Compose)
+*   [x] Partial Settlements & Payments
+
