@@ -25,6 +25,7 @@ fun CityCard(
     isActive: Boolean = false,
     isLocked: Boolean = false,
     activeCityName: String? = null,
+    currencySymbol: String = "₹",
     onClick: () -> Unit
 ) {
     val cardAlpha = if (isLocked) 0.5f else 1f
@@ -162,7 +163,7 @@ fun CityCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        NumberFormat.getCurrencyInstance().format(stats.totalExpenses),
+                        "${currencySymbol}${String.format("%.2f", stats.totalExpenses)}",
                         style = MaterialTheme.typography.titleLarge,
                         color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
                     )

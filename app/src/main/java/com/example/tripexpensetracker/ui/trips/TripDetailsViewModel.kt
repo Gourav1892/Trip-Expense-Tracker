@@ -12,12 +12,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 @HiltViewModel
 class TripDetailsViewModel @Inject constructor(
     private val repository: TripRepository,
+    private val userRepository: com.example.tripexpensetracker.data.repository.UserRepository,
     private val activeCityManager: com.example.tripexpensetracker.data.repository.ActiveCityManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -47,6 +49,23 @@ class TripDetailsViewModel @Inject constructor(
     // Reactive flow for the specific trip
     val trip: StateFlow<Trip?> = repository.getAllTrips()
         .map { trips -> trips.find { it.id == _tripId } }
+        .flatMapLatest { trip ->
+            if (trip == null) kotlinx.coroutines.flow.flowOf(null)
+            else {
+                val uids = trip.participants.mapNotNull { it.userId }
+                userRepository.getUsersFlow(uids).map { userMap ->
+                    val hydratedParticipants = trip.participants.map { p ->
+                        val user = userMap[p.userId]
+                        if (user != null && !user.displayName.isNullOrBlank()) {
+                            p.copy(name = user.displayName!!)
+                        } else {
+                            p
+                        }
+                    }
+                    trip.copy(participants = hydratedParticipants)
+                }
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val approvedParticipants = trip.map { it?.participants?.filter { p -> 

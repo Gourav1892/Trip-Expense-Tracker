@@ -359,7 +359,7 @@ fun UserResultItem(
             Icon(Icons.Default.Person, null, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = user.displayName ?: "Unknown", style = MaterialTheme.typography.titleMedium)
+                Text(text = user.displayName?.ifBlank { user.phone } ?: user.phone, style = MaterialTheme.typography.titleMedium)
                 Text(text = user.phone, style = MaterialTheme.typography.bodySmall)
             }
             if (onAddToFriends != null) {

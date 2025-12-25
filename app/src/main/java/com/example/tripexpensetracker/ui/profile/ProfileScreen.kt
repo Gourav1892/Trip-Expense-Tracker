@@ -14,6 +14,8 @@ import coil.compose.AsyncImage
 import com.example.tripexpensetracker.ui.login.LoginViewModel
 import com.example.tripexpensetracker.data.repository.UserRepository
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +28,49 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val user by viewModel.user.collectAsState(initial = null)
+    
+    // Edit name dialog state
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editNameText by remember { mutableStateOf("") }
+    
+    // Update editNameText when user loads
+    LaunchedEffect(user?.displayName) {
+        editNameText = user?.displayName ?: ""
+    }
+    
+    // Edit Name Dialog
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text("Edit Name") },
+            text = {
+                OutlinedTextField(
+                    value = editNameText,
+                    onValueChange = { editNameText = it },
+                    label = { Text("Display Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (editNameText.isNotBlank()) {
+                            viewModel.updateDisplayName(editNameText.trim())
+                            showEditNameDialog = false
+                        }
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
     
     Scaffold(
         topBar = {
@@ -49,10 +94,10 @@ fun ProfileScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            
-            if (user?.photoUrl != null) {
+            val currentUser = user
+            if (currentUser?.photoUrl != null) {
                 AsyncImage(
-                    model = user!!.photoUrl,
+                    model = currentUser.photoUrl,
                     contentDescription = "Profile Picture",
                     modifier = Modifier
                         .size(120.dp)
@@ -66,8 +111,9 @@ fun ProfileScreen(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Box(contentAlignment = Alignment.Center) {
+                        val initial = (currentUser?.displayName ?: currentUser?.phone)?.firstOrNull()?.toString()?.uppercase() ?: "?"
                         Text(
-                            text = user?.displayName?.firstOrNull()?.toString()?.uppercase() ?: "?",
+                            text = initial,
                             style = MaterialTheme.typography.displayMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -79,15 +125,28 @@ fun ProfileScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                text = user?.displayName ?: "Loading...",
-                style = MaterialTheme.typography.headlineMedium
-            )
+            // Name with Edit button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = currentUser?.displayName ?: if (currentUser != null) currentUser.phone else "Loading...",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                IconButton(onClick = { showEditNameDialog = true }) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit Name",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = user?.phone ?: "",
+                text = currentUser?.phone ?: "",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

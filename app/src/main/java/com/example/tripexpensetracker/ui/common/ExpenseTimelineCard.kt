@@ -18,6 +18,7 @@ import java.util.*
 @Composable
 fun ExpenseTimelineCard(
     expense: Expense,
+    currencySymbol: String = "₹",
     onDeleteClick: (() -> Unit)? = null
 ) {
     val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
@@ -69,7 +70,7 @@ fun ExpenseTimelineCard(
             }
             
             Text(
-                NumberFormat.getCurrencyInstance().format(expense.amount),
+                "${currencySymbol}${String.format("%.2f", expense.amount)}",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.error
             )

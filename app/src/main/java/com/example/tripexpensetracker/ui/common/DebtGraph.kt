@@ -29,6 +29,7 @@ import kotlin.math.atan2
 fun DebtGraph(
     debts: List<Debt>,
     personNames: Map<String, String>,
+    currencySymbol: String = "₹",
     modifier: Modifier = Modifier
 ) {
     // Text measurement handling
@@ -117,7 +118,7 @@ fun DebtGraph(
                         textAlign = android.graphics.Paint.Align.CENTER
                         isFakeBoldText = true
                     }
-                    drawText("$${debt.amount.toInt()}", midPoint.x, midPoint.y - 10, paint)
+                    drawText("${currencySymbol}${debt.amount.toInt()}", midPoint.x, midPoint.y - 10, paint)
                 }
             }
 

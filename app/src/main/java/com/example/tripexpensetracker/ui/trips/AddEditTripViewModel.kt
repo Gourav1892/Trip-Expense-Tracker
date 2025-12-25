@@ -127,7 +127,7 @@ class AddEditTripViewModel @Inject constructor(
 
     fun onAddFriend(friend: com.example.tripexpensetracker.data.model.Friend) {
         val newParticipant = Participant(
-            name = friend.name,
+            name = friend.name.ifBlank { friend.phoneNumber ?: "Friend" },
             userId = friend.linkedUserId,
             phoneNumber = friend.phoneNumber,
             status = Participant.STATUS_INVITED
@@ -137,7 +137,7 @@ class AddEditTripViewModel @Inject constructor(
 
     fun onAddUser(user: com.example.tripexpensetracker.data.model.User) {
         val newParticipant = Participant(
-            name = user.displayName ?: user.phone,
+            name = user.displayName?.ifBlank { user.phone } ?: user.phone,
             userId = user.uid,
             phoneNumber = user.phone,
             status = Participant.STATUS_INVITED
@@ -164,6 +164,26 @@ class AddEditTripViewModel @Inject constructor(
 
     private val _participants = kotlinx.coroutines.flow.MutableStateFlow<List<Participant>>(emptyList())
     val participants = _participants.asStateFlow()
+
+    private val _currencyCode = kotlinx.coroutines.flow.MutableStateFlow("INR")
+    val currencyCode = _currencyCode.asStateFlow()
+
+    private val _currencySymbol = kotlinx.coroutines.flow.MutableStateFlow("₹")
+    val currencySymbol = _currencySymbol.asStateFlow()
+
+    private val currencyMap = mapOf(
+        "INR" to "₹",
+        "USD" to "$",
+        "EUR" to "€",
+        "GBP" to "£",
+        "JPY" to "¥",
+        "AED" to "د.إ"
+    )
+
+    fun onCurrencyChanged(code: String) {
+        _currencyCode.value = code
+        _currencySymbol.value = currencyMap[code] ?: "₹"
+    }
     
     fun onTripNameChanged(name: String) { _tripName.value = name }
 
@@ -198,6 +218,8 @@ class AddEditTripViewModel @Inject constructor(
                 _participants.value = trip.participants
                 _budget.value = trip.budget?.toString() ?: ""
                 _alertThreshold.value = trip.budgetAlertThreshold?.toFloat() ?: 80f
+                _currencyCode.value = trip.currencyCode
+                _currencySymbol.value = trip.currencySymbol
             }
         }
     }
@@ -323,17 +345,25 @@ class AddEditTripViewModel @Inject constructor(
                              participants = updatedParticipants,
                              participantIds = participantIds,
                              budget = _budget.value.toDoubleOrNull(),
-                             budgetAlertThreshold = _alertThreshold.value.toDouble()
+                             budgetAlertThreshold = _alertThreshold.value.toDouble(),
+                             currencyCode = _currencyCode.value,
+                             currencySymbol = _currencySymbol.value
                          )
                          repository.updateTrip(trip)
                          
                          val existingPeople = repository.getPeopleForTrip(tripId!!).first()
                          val existingNames = existingPeople.map { it.name }.toSet()
                          
-                         // Only add Person docs for JOINED participants (not pending invites)
+                         // Only add Person docs for: manual entries OR registered users who are JOINED
                           for (p in updatedParticipants) {
-                              if (!existingNames.contains(p.name) && 
-                                  p.status == Participant.STATUS_JOINED) {
+                              val shouldAddPerson = when {
+                                  existingNames.contains(p.name) -> false // Already exists
+                                  p.userId == null -> true // Manual entry, always add
+                                  p.status == Participant.STATUS_JOINED -> true // Registered user who accepted
+                                  else -> false // Pending/invited registered users
+                              }
+                              
+                              if (shouldAddPerson) {
                                    repository.insertPerson(Person(
                                     tripId = tripId!!, 
                                     name = p.name,
@@ -350,7 +380,9 @@ class AddEditTripViewModel @Inject constructor(
                         participants = updatedParticipants,
                         participantIds = participantIds,
                         budget = _budget.value.toDoubleOrNull(),
-                        budgetAlertThreshold = _alertThreshold.value.toDouble()
+                        budgetAlertThreshold = _alertThreshold.value.toDouble(),
+                        currencyCode = _currencyCode.value,
+                        currencySymbol = _currencySymbol.value
                     )
                     finalTripId = repository.insertTrip(trip)
                     
@@ -365,11 +397,19 @@ class AddEditTripViewModel @Inject constructor(
                         ))
                     }
                     
-                    // Add other participants as people ONLY if they are JOINED (not pending)
-                    // Pending participants shouldn't appear in payer dropdown
+                    // Add other participants as people:
+                    // - Manual entries (no userId): Always add, they're managed by creator
+                    // - Registered users (has userId): Only add if JOINED (accepted invite)
+                    // - Never add pending (INVITED) registered users
                     for (participant in updatedParticipants) {
-                        if (participant.userId != currentCreatorId && 
-                            participant.status == Participant.STATUS_JOINED) {
+                        val shouldAddPerson = when {
+                            participant.userId == currentCreatorId -> false // Already added creator above
+                            participant.userId == null -> true // Manual entry, always add
+                            participant.status == Participant.STATUS_JOINED -> true // Registered user who accepted
+                            else -> false // Pending/invited registered users
+                        }
+                        
+                        if (shouldAddPerson) {
                             repository.insertPerson(Person(
                                 tripId = finalTripId, 
                                 name = participant.name,

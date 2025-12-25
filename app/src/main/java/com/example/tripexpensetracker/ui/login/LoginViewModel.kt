@@ -22,7 +22,12 @@ class LoginViewModel @Inject constructor(
     private var verificationId: String? = null
 
     fun onPhoneNumberChange(number: String) {
-        _uiState.value = _uiState.value.copy(phoneNumber = number, error = null)
+        // Only store the local number (without country code)
+        _uiState.value = _uiState.value.copy(phoneNumber = number.replace(Regex("[^0-9]"), ""), error = null)
+    }
+    
+    fun onCountryCodeChange(code: String) {
+        _uiState.value = _uiState.value.copy(countryCode = code, error = null)
     }
 
     fun onOtpChange(otp: String) {
@@ -41,11 +46,18 @@ class LoginViewModel @Inject constructor(
         val currentMode = _uiState.value.isSignUp
         _uiState.value = LoginUiState(isSignUp = !currentMode)
     }
+    
+    // Get full phone with country code
+    private fun getFullPhoneNumber(): String {
+        val code = _uiState.value.countryCode
+        val number = _uiState.value.phoneNumber
+        return "$code$number"
+    }
 
     // Step 1: Send OTP (Sign Up)
     fun sendOtp(activity: android.app.Activity) {
-        val phone = _uiState.value.phoneNumber
-        if (phone.isBlank()) {
+        val phone = getFullPhoneNumber()
+        if (_uiState.value.phoneNumber.isBlank()) {
             _uiState.value = _uiState.value.copy(error = "Enter phone number")
             return
         }
@@ -112,7 +124,7 @@ class LoginViewModel @Inject constructor(
     fun completeSignUp() {
         val pass = _uiState.value.password
         val confirm = _uiState.value.confirmPassword
-        val phone = _uiState.value.phoneNumber
+        val phone = getFullPhoneNumber()
         val name = _uiState.value.name
         val photoUri = _uiState.value.photoUri
 
@@ -139,10 +151,10 @@ class LoginViewModel @Inject constructor(
 
     // Login Flow
     fun login() {
-        val phone = _uiState.value.phoneNumber
+        val phone = getFullPhoneNumber()
         val password = _uiState.value.password
         
-        if (phone.isBlank() || password.isBlank()) {
+        if (_uiState.value.phoneNumber.isBlank() || password.isBlank()) {
                _uiState.value = _uiState.value.copy(error = "Fill all fields")
                return
         }
@@ -167,6 +179,7 @@ enum class SignUpStep { PHONE_INPUT, OTP_INPUT, NAME_INPUT, PASSWORD_INPUT }
 
 data class LoginUiState(
     val phoneNumber: String = "",
+    val countryCode: String = "+91", // India default
     val otp: String = "",         // For Sign Up
     val name: String = "",        // For Sign Up
     val photoUri: android.net.Uri? = null, // For Sign Up
@@ -178,3 +191,4 @@ data class LoginUiState(
     val isLoggedIn: Boolean = false,
     val error: String? = null
 )
+

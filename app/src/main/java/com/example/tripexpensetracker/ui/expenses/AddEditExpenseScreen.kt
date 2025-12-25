@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.tripexpensetracker.data.model.Person
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,6 +24,8 @@ fun AddEditExpenseScreen(
     onNavigateBack: () -> Unit,
     viewModel: AddEditExpenseViewModel = hiltViewModel()
 ) {
+    val currencySymbol by viewModel.currencySymbol.collectAsState()
+    val suggestedDestinationId by viewModel.suggestedDestinationId.collectAsState()
     // LaunchedEffect removed as ViewModel handles init via SavedStateHandle
 
     val people by viewModel.people.collectAsState(initial = emptyList())
@@ -40,10 +43,13 @@ fun AddEditExpenseScreen(
     var selectedDestination by remember { mutableStateOf<com.example.tripexpensetracker.data.model.Destination?>(null) }
     var cityExpanded by remember { mutableStateOf(false) }
     
-    // Pre-select city when loading from navigation
-    LaunchedEffect(destinationId, destinations) {
-        if (destinationId != null && selectedDestination == null && destinations.isNotEmpty()) {
-            selectedDestination = destinations.find { it.id == destinationId }
+    // Pre-select city when loading from navigation or if suggested by active visit
+    LaunchedEffect(destinationId, suggestedDestinationId, destinations) {
+        if (destinations.isNotEmpty() && selectedDestination == null) {
+            val targetId = destinationId ?: suggestedDestinationId
+            if (targetId != null) {
+                selectedDestination = destinations.find { it.id == targetId }
+            }
         }
     }
 
@@ -224,7 +230,7 @@ fun AddEditExpenseScreen(
                 value = amount,
                 enabled = isFormEnabled,
                 onValueChange = { if (it.all { char -> char.isDigit() || char == '.' }) amount = it },
-                label = { Text("Amount") },
+                label = { Text("Amount ($currencySymbol)") },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
             )
@@ -237,8 +243,9 @@ fun AddEditExpenseScreen(
                 onExpandedChange = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val payerDisplayName = selectedPayer?.name?.ifBlank { selectedPayer?.phoneNumber } ?: "Select Payer"
                 OutlinedTextField(
-                    value = if (people.isEmpty()) "Loading..." else (selectedPayer?.name ?: "Select Payer"),
+                    value = if (people.isEmpty()) "Loading..." else payerDisplayName,
                     enabled = people.isNotEmpty() && isFormEnabled,
                     onValueChange = {},
                     readOnly = true,
@@ -262,7 +269,7 @@ fun AddEditExpenseScreen(
                 ) {
                     people.forEach { person ->
                         DropdownMenuItem(
-                            text = { Text(person.name) },
+                            text = { Text(person.name.ifBlank { person.phoneNumber ?: "Unknown" }) },
                             onClick = {
                                 selectedPayer = person
                                 expanded = false
@@ -437,7 +444,7 @@ fun AddEditExpenseScreen(
                              }
                         }
                     )
-                    Text(person.name, modifier = Modifier.weight(1f))
+                    Text(person.name.ifBlank { person.phoneNumber ?: "Unknown" }, modifier = Modifier.weight(1f))
 
                     if (splitType != SplitType.EQUAL && isSelected) {
                         val label = when(splitType) {
@@ -469,7 +476,7 @@ fun AddEditExpenseScreen(
                         val diff = targetAmount - currentValues
                         val color = if (kotlin.math.abs(diff) < 0.01) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         Text(
-                            text = "Remaining: ${java.text.NumberFormat.getCurrencyInstance().format(diff)}",
+                            text = "Remaining: ${currencySymbol}${String.format("%.2f", diff)}",
                             color = color,
                             style = MaterialTheme.typography.bodySmall
                         )

@@ -2,6 +2,7 @@ package com.example.tripexpensetracker.data.repository
 
 import com.example.tripexpensetracker.data.model.Friend
 import com.example.tripexpensetracker.data.model.FriendRequest
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
@@ -10,7 +11,8 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class FriendRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val auth: FirebaseAuth
 ) {
 
     // Friends are stored in a subcollection of the user: /users/{userId}/friends/{friendId}
@@ -42,10 +44,35 @@ class FriendRepository @Inject constructor(
     }
 
     suspend fun deleteFriend(userId: String, friendId: String) {
+        // Get the friend document to find their linkedUserId
+        val friendDoc = firestore.collection("users").document(userId).collection("friends")
+            .document(friendId)
+            .get()
+            .await()
+        
+        val friend = friendDoc.toObject(Friend::class.java)
+        
+        // Delete from current user's list
         firestore.collection("users").document(userId).collection("friends")
             .document(friendId)
             .delete()
             .await()
+        
+        // Also delete from the other user's friends list (mutual unfriend)
+        if (friend?.linkedUserId != null) {
+            val otherUserId = friend.linkedUserId
+            // Find and delete the friend entry in the other user's collection
+            val otherUserFriends = firestore.collection("users")
+                .document(otherUserId)
+                .collection("friends")
+                .whereEqualTo("linkedUserId", userId)
+                .get()
+                .await()
+            
+            for (doc in otherUserFriends.documents) {
+                doc.reference.delete().await()
+            }
+        }
     }
 
     // ========== FRIEND REQUEST METHODS ==========
@@ -78,7 +105,18 @@ class FriendRepository @Inject constructor(
         val senderId = request.senderId
         
         if (accept) {
-            // Add each other as friends
+            // Get receiver's (current user's) info
+            val currentUser = auth.currentUser
+            var receiverName = currentUser?.displayName
+            val receiverPhone = currentUser?.phoneNumber
+            
+            // Fallback: Fetch from Firestore user profile if displayName is null
+            if (receiverName.isNullOrBlank() && receiverId.isNotEmpty()) {
+                val userDoc = firestore.collection("users").document(receiverId).get().await()
+                receiverName = userDoc.getString("displayName") ?: userDoc.getString("phone") ?: "Friend"
+            }
+            
+            // Add sender to receiver's friends list
             val friendForReceiver = Friend(
                 ownerId = receiverId,
                 name = request.senderName,
@@ -87,11 +125,11 @@ class FriendRepository @Inject constructor(
             )
             addFriend(receiverId, friendForReceiver)
             
-            // Also add receiver to sender's friends list
-            // We need receiver's info - for now use basic info
+            // Add receiver to sender's friends list (mutual!)
             val friendForSender = Friend(
                 ownerId = senderId,
-                name = "", // Will be populated from user profile ideally
+                name = receiverName ?: "Friend",
+                phoneNumber = receiverPhone,
                 linkedUserId = receiverId
             )
             addFriend(senderId, friendForSender)

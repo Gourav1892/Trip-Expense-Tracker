@@ -194,6 +194,9 @@ fun AppNavigation(startDestination: String) {
                     navController.navigate(Screen.TripList.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
+                },
+                onForgotPassword = {
+                    navController.navigate(Screen.ChangePassword.route)
                 }
             )
         }

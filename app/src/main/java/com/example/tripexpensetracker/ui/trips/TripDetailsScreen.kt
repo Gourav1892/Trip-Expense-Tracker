@@ -267,7 +267,8 @@ fun TripDetailsScreen(
                     expenses = expenses,
                     destinations = destinations,
                     budget = trip?.budget,
-                    budgetAlertThreshold = trip?.budgetAlertThreshold ?: 80.0
+                    budgetAlertThreshold = trip?.budgetAlertThreshold ?: 80.0,
+                    currencySymbol = trip?.currencySymbol ?: "₹"
                 )
             }
             
@@ -326,7 +327,7 @@ fun TripDetailsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = participant.name,
+                                    text = participant.name.ifBlank { participant.phoneNumber ?: "Unknown" },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = if (isPending) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
                                 )
@@ -387,7 +388,7 @@ fun TripDetailsScreen(
                     }
                     
                     val isThisCityActive = activeCityId == destination.id
-                    val isAnotherCityActive = activeCityId != null && activeCityId != destination.id
+                    val isAnotherCityActive = activeTripId == tripId && activeCityId != null && activeCityId != destination.id
                     
                     com.example.tripexpensetracker.ui.common.CityCard(
                         destination = destination,
@@ -395,6 +396,7 @@ fun TripDetailsScreen(
                         isActive = isThisCityActive,
                         isLocked = isAnotherCityActive,
                         activeCityName = activeCityName,
+                        currencySymbol = trip?.currencySymbol ?: "₹",
                         onClick = {
                             when {
                                 isThisCityActive -> {
@@ -459,7 +461,8 @@ fun TripDetailsScreen(
                         onDeleteClick = { 
                             expenseToDelete = expense
                             showDeleteDialog = true
-                        }
+                        },
+                        currencySymbol = trip?.currencySymbol ?: "₹"
                     )
                 }
             }
@@ -477,7 +480,8 @@ fun ExpensesTabContent(
     selectedCategory: String,
     onCategorySelected: (String) -> Unit,
     onResendInvite: (com.example.tripexpensetracker.data.model.Participant) -> Unit,
-    onDeleteExpense: (Expense) -> Unit
+    onDeleteExpense: (Expense) -> Unit,
+    currencySymbol: String
 ) {
     var showChart by remember { mutableStateOf(false) }
 
@@ -497,7 +501,7 @@ fun ExpensesTabContent(
                     val total = expenses.sumOf { it.amount }
                     Text("Total Expenses", style = MaterialTheme.typography.labelMedium)
                     Text(
-                        text = NumberFormat.getCurrencyInstance().format(total),
+                        text = "${currencySymbol}${String.format("%.2f", total)}",
                         style = MaterialTheme.typography.headlineLarge,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -549,11 +553,11 @@ fun ExpensesTabContent(
                                 people.find { it.id == personId }?.name ?: "Unknown"
                             }
                             .mapValues { (_, list) -> list.sumOf { it.amount } }
-                        
                         if (memberSpending.isNotEmpty()) {
                             com.example.tripexpensetracker.ui.common.BarChart(
                                 data = memberSpending,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                currencySymbol = currencySymbol
                             )
                         } else {
                             Text("No member data available.")
@@ -581,7 +585,7 @@ fun ExpensesTabContent(
                                  horizontalArrangement = Arrangement.SpaceBetween,
                                  verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                              ) {
-                                 Text(p.name, style = MaterialTheme.typography.bodyMedium)
+                                 Text(p.name.ifBlank { p.phoneNumber ?: "Unknown" }, style = MaterialTheme.typography.bodyMedium)
                                  TextButton(onClick = { onResendInvite(p) }) {
                                      Text("Resend")
                                  }
@@ -596,7 +600,7 @@ fun ExpensesTabContent(
                              Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                  Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                  Spacer(modifier = Modifier.width(8.dp))
-                                 Text(p.name, style = MaterialTheme.typography.bodyMedium)
+                                 Text(p.name.ifBlank { p.phoneNumber ?: "Unknown" }, style = MaterialTheme.typography.bodyMedium)
                              }
                          }
                      }
@@ -632,7 +636,8 @@ fun ExpensesTabContent(
         items(expenses) { expense ->
              ExpenseItem(
                  expense = expense,
-                 onDeleteClick = { onDeleteExpense(expense) }
+                 onDeleteClick = { onDeleteExpense(expense) },
+                 currencySymbol = currencySymbol
              )
         }
     }
@@ -688,7 +693,7 @@ fun ItineraryTabContent(
 }
 
 @Composable
-fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit) {
+fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit, currencySymbol: String) {
     ListItem(
         leadingContent = {
             com.example.tripexpensetracker.ui.common.CategoryIcon(category = expense.category)
@@ -698,7 +703,7 @@ fun ExpenseItem(expense: Expense, onDeleteClick: () -> Unit) {
         trailingContent = {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(
-                    text = NumberFormat.getCurrencyInstance().format(expense.amount),
+                    text = "${currencySymbol}${String.format("%.2f", expense.amount)}",
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -717,7 +722,8 @@ fun TripSummaryCard(
     expenses: List<Expense>,
     destinations: List<com.example.tripexpensetracker.data.model.Destination>,
     budget: Double? = null,
-    budgetAlertThreshold: Double = 80.0
+    budgetAlertThreshold: Double = 80.0,
+    currencySymbol: String
 ) {
     Card(
         modifier = Modifier
@@ -742,7 +748,7 @@ fun TripSummaryCard(
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        NumberFormat.getCurrencyInstance().format(totalSpent),
+                        "${currencySymbol}${String.format("%.2f", totalSpent)}",
                         style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -776,7 +782,7 @@ fun TripSummaryCard(
                          color = MaterialTheme.colorScheme.onSecondaryContainer
                      )
                      Text(
-                         text = "Budget: ${NumberFormat.getCurrencyInstance().format(budget)}",
+                         text = "Budget: ${currencySymbol}${String.format("%.2f", budget)}",
                          style = MaterialTheme.typography.labelSmall,
                          color = MaterialTheme.colorScheme.onSecondaryContainer
                      )
@@ -784,7 +790,7 @@ fun TripSummaryCard(
                  
                  if (isOverBudget) {
                       Text(
-                         text = "Over Budget by ${NumberFormat.getCurrencyInstance().format(totalSpent - budget)}",
+                         text = "Over Budget by ${currencySymbol}${String.format("%.2f", totalSpent - budget)}",
                          style = MaterialTheme.typography.labelSmall,
                          color = MaterialTheme.colorScheme.error
                      )

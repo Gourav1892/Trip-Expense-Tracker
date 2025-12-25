@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,10 +26,61 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import coil.compose.AsyncImage
 
+// Country codes data
+data class CountryCode(val country: String, val code: String, val flag: String)
+
+val countryCodes = listOf(
+    CountryCode("India", "+91", "🇮🇳"),
+    CountryCode("USA", "+1", "🇺🇸"),
+    CountryCode("UK", "+44", "🇬🇧"),
+    CountryCode("Canada", "+1", "🇨🇦"),
+    CountryCode("Australia", "+61", "🇦🇺"),
+    CountryCode("UAE", "+971", "🇦🇪"),
+    CountryCode("Singapore", "+65", "🇸🇬"),
+    CountryCode("Germany", "+49", "🇩🇪"),
+    CountryCode("France", "+33", "🇫🇷"),
+    CountryCode("Japan", "+81", "🇯🇵"),
+)
+
+@Composable
+fun CountryCodePicker(
+    selectedCode: CountryCode,
+    onCodeSelected: (CountryCode) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.width(100.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+        ) {
+            Text("${selectedCode.flag} ${selectedCode.code}")
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            countryCodes.forEach { countryCode ->
+                DropdownMenuItem(
+                    text = { Text("${countryCode.flag} ${countryCode.country} (${countryCode.code})") },
+                    onClick = {
+                        onCodeSelected(countryCode)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
+    onForgotPassword: () -> Unit = {},
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -42,6 +94,9 @@ fun LoginScreen(
     var isLoginPasswordVisible by remember { mutableStateOf(false) }
     var isSignUpPasswordVisible by remember { mutableStateOf(false) }
     var isSignUpConfirmPasswordVisible by remember { mutableStateOf(false) }
+    
+    // Country code state - default to India
+    var selectedCountryCode by remember { mutableStateOf(countryCodes.first()) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? android.app.Activity
@@ -87,15 +142,28 @@ fun LoginScreen(
             }
 
             if (!uiState.isSignUp) {
-                // LOGIN MODE
-                OutlinedTextField(
-                    value = uiState.phoneNumber,
-                    onValueChange = viewModel::onPhoneNumberChange,
-                    label = { Text("Phone Number") },
+                // LOGIN MODE - Phone with country picker
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true
-                )
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CountryCodePicker(
+                        selectedCode = selectedCountryCode,
+                        onCodeSelected = { selectedCountryCode = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = uiState.phoneNumber,
+                        onValueChange = { 
+                            viewModel.onPhoneNumberChange(it)
+                            viewModel.onCountryCodeChange(selectedCountryCode.code)
+                        },
+                        label = { Text("Phone Number") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = uiState.password,
@@ -118,28 +186,69 @@ fun LoginScreen(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = viewModel::login,
+                    onClick = { 
+                        viewModel.onCountryCodeChange(selectedCountryCode.code)
+                        viewModel.login() 
+                    },
                     enabled = !uiState.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (uiState.isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                     else Text("Login")
                 }
+                
+                // Forgot Password Link - highlighted if login error
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = {
+                        viewModel.onCountryCodeChange(selectedCountryCode.code)
+                        onForgotPassword()
+                    }
+                ) {
+                    Text(
+                        text = "Forgot Password?",
+                        color = if (uiState.error != null) 
+                            MaterialTheme.colorScheme.error 
+                        else 
+                            MaterialTheme.colorScheme.primary,
+                        style = if (uiState.error != null) 
+                            MaterialTheme.typography.bodyLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        else
+                            MaterialTheme.typography.bodyMedium
+                    )
+                }
             } else {
                 // SIGN UP MODE
                 when (uiState.signUpStep) {
                     SignUpStep.PHONE_INPUT -> {
-                        OutlinedTextField(
-                            value = uiState.phoneNumber,
-                            onValueChange = viewModel::onPhoneNumberChange,
-                            label = { Text("Phone Number") },
+                        // Phone input with country picker
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            singleLine = true
-                        )
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CountryCodePicker(
+                                selectedCode = selectedCountryCode,
+                                onCodeSelected = { selectedCountryCode = it }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedTextField(
+                                value = uiState.phoneNumber,
+                                onValueChange = {
+                                    viewModel.onPhoneNumberChange(it)
+                                    viewModel.onCountryCodeChange(selectedCountryCode.code)
+                                },
+                                label = { Text("Phone Number") },
+                                modifier = Modifier.weight(1f),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true
+                            )
+                        }
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(
-                            onClick = { activity?.let { viewModel.sendOtp(it) } },
+                            onClick = { 
+                                viewModel.onCountryCodeChange(selectedCountryCode.code)
+                                activity?.let { viewModel.sendOtp(it) } 
+                            },
                             enabled = !uiState.isLoading,
                             modifier = Modifier.fillMaxWidth()
                         ) {

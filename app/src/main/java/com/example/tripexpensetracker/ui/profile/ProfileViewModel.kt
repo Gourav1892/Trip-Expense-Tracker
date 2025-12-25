@@ -26,4 +26,11 @@ class ProfileViewModel @Inject constructor(
     fun signOut() {
         authRepository.signOut()
     }
+    
+    fun updateDisplayName(newName: String) {
+        val userId = authRepository.userId() ?: return
+        viewModelScope.launch {
+            userRepository.updateDisplayName(userId, newName)
+        }
+    }
 }

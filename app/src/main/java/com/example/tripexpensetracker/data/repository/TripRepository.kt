@@ -36,7 +36,15 @@ class TripRepository @Inject constructor(
             .whereArrayContains("participantIds", userId)
             .orderBy("startDate", Query.Direction.DESCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects<Trip>() }
+            .map { snapshot -> 
+                snapshot.toObjects<Trip>().filter { trip ->
+                    // Show trip only if user is the creator OR user's participant status is JOINED
+                    trip.createdBy == userId || 
+                    trip.participants.any { p -> 
+                        p.userId == userId && p.status == com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED 
+                    }
+                }
+            }
             .catch { e -> 
                 Log.e(TAG, "Error fetching trips. Likely missing Index. Check log for link.", e)
                 emit(emptyList())
@@ -123,17 +131,14 @@ class TripRepository @Inject constructor(
     
     suspend fun insertExpense(expense: Expense, shares: List<ExpenseShare> = emptyList()) {
         val expenseCollection = firestore.collection("trips").document(expense.tripId).collection("expenses")
+        val sharesCollection = firestore.collection("trips").document(expense.tripId).collection("shares")
         val docRef = expenseCollection.document()
         val expenseWithId = expense.copy(id = docRef.id)
-        
-        // We will store shares as a subcollection of the expense for cleaner mapping, or embedded?
-        // Let's store embedded in a separate field map if possible, but Expense data class doesn't have it.
-        // Let's store shares in a sub-collection of the expense document. "expenses/{expenseId}/shares"
         
         firestore.runBatch { batch ->
             batch.set(docRef, expenseWithId)
             shares.forEach { share ->
-                val shareDoc = docRef.collection("shares").document()
+                val shareDoc = sharesCollection.document()
                 val shareWithId = share.copy(id = shareDoc.id, expenseId = docRef.id, tripId = expense.tripId)
                 batch.set(shareDoc, shareWithId)
             }
@@ -146,9 +151,9 @@ class TripRepository @Inject constructor(
     
     suspend fun deleteExpense(expense: Expense) {
         val expenseRef = firestore.collection("trips").document(expense.tripId).collection("expenses").document(expense.id)
-        // Note: Subcollections are not automatically deleted in Firestore.
-        // We should manually delete shares first.
-        val shares = expenseRef.collection("shares").get().await()
+        val sharesRef = firestore.collection("trips").document(expense.tripId).collection("shares")
+        
+        val shares = sharesRef.whereEqualTo("expenseId", expense.id).get().await()
         firestore.runBatch { batch ->
              shares.documents.forEach { batch.delete(it.reference) }
              batch.delete(expenseRef)
@@ -190,22 +195,11 @@ class TripRepository @Inject constructor(
     // THIS IS THE BEST SOLUTION. Flat sub-collection for shares under trip.
     
     suspend fun getSharesForExpense(expenseId: String): List<ExpenseShare> {
-        // This query depends on where we store them. 
-        // If we store in `trips/{tripId}/shares`, we need to filter by expenseId.
-        // But we need tripId to find the collection. The signature only has `expenseId`.
-        // This implies we can't find it easily without tripId.
-        // 
-        // Let's look at usage. `SettlementViewModel` calls `getSharesForTrip(tripId)`.
-        // `AddEditExpenseViewModel` calls `insertExpense`.
-        // 
-        // So `getSharesForTrip` is the critical one.
-        // Storing shares in `trips/{tripId}/shares` works perfectly for `getSharesForTrip`.
-        // For `getSharesForExpense(expenseId)`, we would need `tripId` or we query `trips/{tripId}/shares` where `expenseId` == ID.
-        // But we don't know tripId in `getSharesForExpense` signature?
-        // Wait, `ExpenseShare` entity has `expenseId` but not `tripId`.
-        // I should add `tripId` to `ExpenseShare` entity/model.
-        
-        return emptyList() // Placeholder until I fix Entity
+        return firestore.collectionGroup("shares")
+            .whereEqualTo("expenseId", expenseId)
+            .get()
+            .await()
+            .toObjects<ExpenseShare>()
     }
 
     fun getSharesForTrip(tripId: String): Flow<List<ExpenseShare>> {
@@ -280,17 +274,19 @@ class TripRepository @Inject constructor(
                 
                 val userPhone = auth.currentUser?.phoneNumber // Might need to fetch User object if phone is needed and missing
                 
+                // Fetch real name from Firestore instead of relying on Auth displayName
+                val userDoc = transaction.get(firestore.collection("users").document(userId))
+                val actualName = userDoc.getString("displayName")?.ifBlank { userPhone } ?: userPhone ?: "Joined User"
+                
                 if (existingIndex != null && existingIndex >= 0) {
-                     // Update status
-                     currentParticipants[existingIndex] = currentParticipants[existingIndex].copy(
-                         status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
-                     )
+                    currentParticipants[existingIndex] = currentParticipants[existingIndex].copy(
+                        name = actualName,
+                        status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
+                    )
                 } else {
-                    // Add new
-                    // Fetch name?
                     currentParticipants.add(
                         com.example.tripexpensetracker.data.model.Participant(
-                            name = "Joined User", // Ideally fetch real name
+                            name = actualName,
                             userId = userId,
                             phoneNumber = userPhone,
                             status = com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
@@ -311,12 +307,16 @@ class TripRepository @Inject constructor(
             }.await()
             
             // Add Person document so they appear in payer dropdown
-            val acceptedParticipant = invitation.inviterName // TODO: Get actual name from user profile
+            // Recalculate name for Person as well from Firestore snapshot
+            val userSnapshot = firestore.collection("users").document(userId).get().await()
+            val finalName = userSnapshot.getString("displayName")?.ifBlank { userSnapshot.getString("phone") } 
+                ?: userSnapshot.getString("phone") ?: "Joined User"
+                
             insertPerson(Person(
                 tripId = invitation.tripId,
-                name = auth.currentUser?.displayName ?: "Joined User",
+                name = finalName,
                 userId = userId,
-                phoneNumber = auth.currentUser?.phoneNumber
+                phoneNumber = userSnapshot.getString("phone")
             ))
             
             // Subscribe to topic

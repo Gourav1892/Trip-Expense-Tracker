@@ -36,6 +36,7 @@ fun CityDetailsScreen(
     val destination by viewModel.destination.collectAsState()
     val timelineItems by viewModel.timelineItems.collectAsState()
     val stats by viewModel.stats.collectAsState()
+    val currencySymbol by viewModel.currencySymbol.collectAsState()
     
     var showEndCityDialog by remember { mutableStateOf(false) }
     
@@ -117,7 +118,8 @@ fun CityDetailsScreen(
             item {
                 CitySummaryCard(
                     stats = stats,
-                    destination = destination
+                    destination = destination,
+                    currencySymbol = currencySymbol
                 )
             }
             
@@ -169,7 +171,7 @@ fun CityDetailsScreen(
                     items(items) { item ->
                         when (item) {
                             is TimelineItem.ExpenseItem -> 
-                                ExpenseTimelineCard(expense = item.expense)
+                                ExpenseTimelineCard(expense = item.expense, currencySymbol = currencySymbol)
                             is TimelineItem.ActivityItem -> 
                                 ActivityTimelineCard(activity = item.activity)
                         }
@@ -183,7 +185,8 @@ fun CityDetailsScreen(
 @Composable
 fun CitySummaryCard(
     stats: com.example.tripexpensetracker.data.model.CityStats,
-    destination: com.example.tripexpensetracker.data.model.Destination?
+    destination: com.example.tripexpensetracker.data.model.Destination?,
+    currencySymbol: String
 ) {
     Card(
         modifier = Modifier
@@ -206,7 +209,7 @@ fun CitySummaryCard(
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        NumberFormat.getCurrencyInstance().format(stats.totalExpenses),
+                        "${currencySymbol}${String.format("%.2f", stats.totalExpenses)}",
                         style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )

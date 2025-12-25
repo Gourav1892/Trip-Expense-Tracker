@@ -43,6 +43,9 @@ fun AddEditTripScreen(
     val budget by viewModel.budget.collectAsState()
     val participants by viewModel.participants.collectAsState()
     val alertThreshold by viewModel.alertThreshold.collectAsState()
+    val currencyCode by viewModel.currencyCode.collectAsState()
+    
+    var currencyExpanded by remember { mutableStateOf(false) }
 
     var showFriendSelector by remember { mutableStateOf(false) }
 
@@ -138,6 +141,41 @@ fun AddEditTripScreen(
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
             )
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Currency Picker
+            ExposedDropdownMenuBox(
+                expanded = currencyExpanded,
+                onExpandedChange = { currencyExpanded = !currencyExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = "Currency: $currencyCode",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Trip Currency") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                )
+                ExposedDropdownMenu(
+                    expanded = currencyExpanded,
+                    onDismissRequest = { currencyExpanded = false }
+                ) {
+                    listOf("INR", "USD", "EUR", "GBP", "JPY", "AED").forEach { code ->
+                        DropdownMenuItem(
+                            text = { Text(code) },
+                            onClick = {
+                                viewModel.onCurrencyChanged(code)
+                                currencyExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             if (budget.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
@@ -155,8 +193,6 @@ fun AddEditTripScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-
-            Text("Participants", style = MaterialTheme.typography.titleMedium)
 
             Spacer(modifier = Modifier.height(16.dp))
 

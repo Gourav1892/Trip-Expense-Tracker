@@ -12,7 +12,9 @@ data class Trip(
     val participants: List<Participant> = emptyList(),
     val participantIds: List<String> = emptyList(),
     val budget: Double? = null,
-    val budgetAlertThreshold: Double? = null
+    val budgetAlertThreshold: Double? = null,
+    val currencyCode: String = "INR",
+    val currencySymbol: String = "₹"
 )
 
 @Stable

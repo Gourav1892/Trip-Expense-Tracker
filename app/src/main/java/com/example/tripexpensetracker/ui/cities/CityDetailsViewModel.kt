@@ -44,12 +44,22 @@ class CityDetailsViewModel @Inject constructor(
     private val _stats = MutableStateFlow(CityStats())
     val stats: StateFlow<CityStats> = _stats
     
+    // Currency Support
+    private val _currencySymbol = MutableStateFlow("₹")
+    val currencySymbol: StateFlow<String> = _currencySymbol
+    
     init {
         // Calculate stats whenever timeline changes
         viewModelScope.launch {
             timelineItems.collect { items ->
                 _stats.value = repository.getCityStats(tripId, destinationId)
             }
+        }
+        
+        // Load currency
+        viewModelScope.launch {
+            val trip = repository.getTripById(tripId)
+            _currencySymbol.value = trip?.currencySymbol ?: "₹"
         }
     }
     

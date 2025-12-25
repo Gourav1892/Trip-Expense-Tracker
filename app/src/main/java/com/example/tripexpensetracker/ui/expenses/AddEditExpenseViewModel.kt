@@ -12,18 +12,38 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class AddEditExpenseViewModel @Inject constructor(
     private val repository: TripRepository,
+    private val userRepository: com.example.tripexpensetracker.data.repository.UserRepository,
+    private val activeCityManager: com.example.tripexpensetracker.data.repository.ActiveCityManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val tripId: String = checkNotNull(savedStateHandle["tripId"])
 
-    val people: StateFlow<List<Person>> = repository.getPeopleForTrip(tripId)
+    private val rawPeople = repository.getPeopleForTrip(tripId)
+    
+    val people: StateFlow<List<Person>> = rawPeople
+        .flatMapLatest { peopleList ->
+            val uids = peopleList.mapNotNull { it.userId }
+            userRepository.getUsersFlow(uids).map { userMap ->
+                peopleList.map { person ->
+                    val user = userMap[person.userId]
+                    if (user != null && !user.displayName.isNullOrBlank()) {
+                        person.copy(name = user.displayName!!)
+                    } else {
+                        person
+                    }
+                }
+            }
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -52,6 +72,26 @@ class AddEditExpenseViewModel @Inject constructor(
     // Smart Suggestions state
     private val _category = kotlinx.coroutines.flow.MutableStateFlow("General")
     val category = _category.asStateFlow()
+
+    private val _currencySymbol = kotlinx.coroutines.flow.MutableStateFlow("₹")
+    val currencySymbol = _currencySymbol.asStateFlow()
+
+    private val _suggestedDestinationId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val suggestedDestinationId = _suggestedDestinationId.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val trip = repository.getTripById(tripId)
+            _currencySymbol.value = trip?.currencySymbol ?: "₹"
+            
+            // Check if there's an active city visit for THIS trip
+            val activeTid = activeCityManager.activeTripId.firstOrNull()
+            val activeCid = activeCityManager.activeCityId.firstOrNull()
+            if (activeTid == tripId) {
+                _suggestedDestinationId.value = activeCid
+            }
+        }
+    }
 
     fun onTitleChanged(title: String) {
         // If the current category is "General" (default), try to find a better one

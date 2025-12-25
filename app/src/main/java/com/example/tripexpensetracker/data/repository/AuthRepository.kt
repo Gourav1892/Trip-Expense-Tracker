@@ -21,6 +21,10 @@ class AuthRepository @Inject constructor(
     fun userId(): String? {
         return auth.currentUser?.uid
     }
+    
+    fun currentUserPhone(): String? {
+        return auth.currentUser?.phoneNumber
+    }
 
     fun signOut() {
         auth.signOut()
@@ -88,6 +92,14 @@ class AuthRepository @Inject constructor(
                                  photoUrl = userRepository.uploadProfilePicture(uid, photoUri)
                              }
                              userRepository.saveUser(uid, phone, displayName, photoUrl)
+                             
+                             // Update Auth profile as well if name is provided
+                             if (displayName != null) {
+                                 val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                                     .setDisplayName(displayName)
+                                     .build()
+                                 auth.currentUser?.updateProfile(profileUpdates)
+                             }
                          }
                     }
                     trySend(Result.success(true))
@@ -108,12 +120,6 @@ class AuthRepository @Inject constructor(
         auth.signInWithEmailAndPassword(email, password)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    val uid = auth.currentUser?.uid
-                    if (uid != null) {
-                        kotlinx.coroutines.GlobalScope.launch {
-                            userRepository.saveUser(uid, phone)
-                        }
-                    }
                     trySend(Result.success(true))
                 } else {
                     trySend(Result.failure(task.exception ?: Exception("Login failed")))
@@ -127,6 +133,25 @@ class AuthRepository @Inject constructor(
         val user = auth.currentUser
         if (user != null && user.email != null) {
             val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(user.email!!, password)
+            user.reauthenticate(credential)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        trySend(Result.success(true))
+                    } else {
+                        trySend(Result.failure(task.exception ?: Exception("Re-authentication failed")))
+                    }
+                    close()
+                }
+        } else {
+            trySend(Result.failure(Exception("User not authenticated")))
+            close()
+        }
+        awaitClose {}
+    }
+    
+    fun reauthenticateWithCredential(credential: com.google.firebase.auth.PhoneAuthCredential): Flow<Result<Boolean>> = callbackFlow {
+        val user = auth.currentUser
+        if (user != null) {
             user.reauthenticate(credential)
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful) {

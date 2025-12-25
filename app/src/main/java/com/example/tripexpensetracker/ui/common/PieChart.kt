@@ -19,6 +19,7 @@ fun PieChart(
     modifier: Modifier = Modifier,
     radiusOuter: Dp = 90.dp,
     chartBarWidth: Dp = 20.dp,
+    currencySymbol: String = "₹",
     animDuration: Int = 1000
 ) {
     val totalSum = data.values.sum()
@@ -82,7 +83,7 @@ fun PieChart(
                     style = MaterialTheme.typography.labelSmall
                 )
                 Text(
-                    text = java.text.NumberFormat.getCurrencyInstance().format(totalSum),
+                    text = "${currencySymbol}${String.format("%.2f", totalSum)}",
                     style = MaterialTheme.typography.titleMedium
                 )
             }

@@ -18,7 +18,8 @@ import java.text.NumberFormat
 fun BarChart(
     data: Map<String, Double>,
     modifier: Modifier = Modifier,
-    barColor: Color = MaterialTheme.colorScheme.primary
+    barColor: Color = MaterialTheme.colorScheme.primary,
+    currencySymbol: String = "₹"
 ) {
     val maxValue = data.values.maxOrNull() ?: 1.0
     val sortedData = data.toList().sortedByDescending { it.second }
@@ -65,7 +66,7 @@ fun BarChart(
 
                 // Value Text
                 Text(
-                    text = NumberFormat.getCurrencyInstance().format(value),
+                    text = "${currencySymbol}${String.format("%.2f", value)}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold
                 )
