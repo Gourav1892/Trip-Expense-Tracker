@@ -7,6 +7,9 @@ import com.example.tripexpensetracker.data.model.CityStats
 import com.example.tripexpensetracker.data.model.Destination
 import com.example.tripexpensetracker.data.model.TimelineItem
 import com.example.tripexpensetracker.data.repository.TripRepository
+import com.example.tripexpensetracker.data.model.Expense
+import com.example.tripexpensetracker.data.model.ExpenseShare
+import com.example.tripexpensetracker.data.model.Person
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -15,7 +18,6 @@ import javax.inject.Inject
 @HiltViewModel
 class CityDetailsViewModel @Inject constructor(
     private val repository: TripRepository,
-    private val activeCityManager: com.example.tripexpensetracker.data.repository.ActiveCityManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     
@@ -27,7 +29,12 @@ class CityDetailsViewModel @Inject constructor(
      */
     fun endCityVisit() {
         viewModelScope.launch {
-            activeCityManager.endCityVisit()
+            // Auto-update end date to NOW
+            val currentCity = destination.value
+            if (currentCity != null) {
+                repository.updateDestination(tripId, currentCity.copy(endDate = System.currentTimeMillis()))
+            }
+            repository.clearActiveDestination(tripId)
         }
     }
     
@@ -43,6 +50,30 @@ class CityDetailsViewModel @Inject constructor(
     // City statistics
     private val _stats = MutableStateFlow(CityStats())
     val stats: StateFlow<CityStats> = _stats
+    
+    // People in Trip (for mapping names)
+    // People in Trip (for mapping names)
+    val people = repository.getPeopleForTrip(tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Selected Expense for Details
+    private val _selectedExpense = MutableStateFlow<Expense?>(null)
+    val selectedExpense: StateFlow<Expense?> = _selectedExpense
+
+    private val _selectedExpenseShares = MutableStateFlow<List<ExpenseShare>>(emptyList())
+    val selectedExpenseShares: StateFlow<List<ExpenseShare>> = _selectedExpenseShares
+
+    fun selectExpense(expense: Expense) {
+        _selectedExpense.value = expense
+        viewModelScope.launch {
+            _selectedExpenseShares.value = repository.getSharesForExpense(tripId, expense.id)
+        }
+    }
+
+    fun dismissExpenseDetails() {
+        _selectedExpense.value = null
+        _selectedExpenseShares.value = emptyList()
+    }
     
     // Currency Support
     private val _currencySymbol = MutableStateFlow("₹")

@@ -14,7 +14,8 @@ data class Trip(
     val budget: Double? = null,
     val budgetAlertThreshold: Double? = null,
     val currencyCode: String = "INR",
-    val currencySymbol: String = "₹"
+    val currencySymbol: String = "₹",
+    val activeDestinationId: String? = null
 )
 
 @Stable

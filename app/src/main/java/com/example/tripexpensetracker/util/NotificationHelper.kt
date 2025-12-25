@@ -18,6 +18,10 @@ object NotificationHelper {
     private const val CHANNEL_ID = "trip_updates"
     private const val CHANNEL_NAME = "Trip Updates"
     private const val CHANNEL_DESCRIPTION = "Notifications for new expenses and trip updates"
+    
+    // New Channel for Daily Summaries
+    private const val DAILY_CHANNEL_ID = "daily_summary"
+    private const val DAILY_CHANNEL_NAME = "Daily Expense Summary"
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -25,9 +29,12 @@ object NotificationHelper {
             val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance).apply {
                 description = CHANNEL_DESCRIPTION
             }
+            val dailyChannel = NotificationChannel(DAILY_CHANNEL_ID, DAILY_CHANNEL_NAME, importance).apply {
+                description = "Daily summary of your spending"
+            }
             val notificationManager: NotificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannels(listOf(channel, dailyChannel))
         }
     }
 
@@ -61,5 +68,41 @@ object NotificationHelper {
         
         // Use a unique ID (e.g., current time) to not overwrite previous notifications immediately
         notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
+    }
+
+    fun showDailySummaryNotification(context: Context, totalAmount: Double, currencySymbol: String, tripCount: Int) {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+        }
+        
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(
+            context, 0, intent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val contentText = if (tripCount > 1) {
+            "You spent $currencySymbol${String.format("%.2f", totalAmount)} across $tripCount trips today."
+        } else {
+            "You spent $currencySymbol${String.format("%.2f", totalAmount)} today."
+        }
+
+        val builder = NotificationCompat.Builder(context, DAILY_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info) 
+            .setContentTitle("Daily Spending Summary")
+            .setContentText(contentText)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // Fixed ID for summary so it updates instead of stacking? Or unique? 
+        // Let's use unique to see history, or fixed 2001 to update. Fixed is better for "Summary".
+        notificationManager.notify(2001, builder.build())
     }
 }

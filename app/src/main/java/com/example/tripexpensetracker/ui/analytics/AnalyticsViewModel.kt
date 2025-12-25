@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.Date
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class AnalyticsViewModel @Inject constructor(
@@ -20,8 +21,21 @@ class AnalyticsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val tripId: String = checkNotNull(savedStateHandle["tripId"])
+    
+    private val _currencySymbol = kotlinx.coroutines.flow.MutableStateFlow("₹")
+    val currencySymbol: StateFlow<String> = _currencySymbol.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "₹")
+
+    init {
+        viewModelScope.launch {
+            val trip = repository.getTripById(tripId)
+             _currencySymbol.value = trip?.currencySymbol ?: "₹"
+        }
+    }
 
     private val allExpenses = repository.getExpensesForTrip(tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val destinations = repository.getDestinationsFlow(tripId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Date Range Filter
@@ -49,6 +63,15 @@ class AnalyticsViewModel @Inject constructor(
             java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(it.date)
         }.mapValues { entry -> entry.value.sumOf { it.amount } }
          .toSortedMap()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // City Wise Data: Map<CityName, TotalAmount>
+    val cityData = kotlinx.coroutines.flow.combine(filteredExpenses, destinations) { expenses, dests ->
+        expenses.groupBy { it.destinationId }
+            .mapKeys { entry -> 
+                dests.find { it.id == entry.key }?.name ?: "Unknown City"
+            }
+            .mapValues { entry -> entry.value.sumOf { it.amount } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     
     // Total Spent

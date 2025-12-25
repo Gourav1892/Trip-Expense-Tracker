@@ -29,6 +29,7 @@ fun CityDetailsScreen(
     destinationId: String,
     onNavigateBack: () -> Unit,
     onAddExpense: (String) -> Unit,
+    onEditExpense: (String) -> Unit,
     onAddActivity: (String) -> Unit,
     onEndCityVisit: () -> Unit = {},
     viewModel: CityDetailsViewModel = hiltViewModel()
@@ -37,8 +38,27 @@ fun CityDetailsScreen(
     val timelineItems by viewModel.timelineItems.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val currencySymbol by viewModel.currencySymbol.collectAsState()
+    val people by viewModel.people.collectAsState()
+    
+    val selectedExpense by viewModel.selectedExpense.collectAsState()
+    val selectedExpenseShares by viewModel.selectedExpenseShares.collectAsState()
     
     var showEndCityDialog by remember { mutableStateOf(false) }
+
+    // Expense Details Dialog
+    if (selectedExpense != null) {
+        com.example.tripexpensetracker.ui.common.ExpenseDetailsDialog(
+            expense = selectedExpense!!,
+            shares = selectedExpenseShares,
+            people = people,
+            currencySymbol = currencySymbol,
+            onDismiss = { viewModel.dismissExpenseDetails() },
+            onEdit = {
+                viewModel.dismissExpenseDetails()
+                onEditExpense(selectedExpense!!.id)
+            }
+        )
+    }
     
     // End City Visit Confirmation Dialog
     if (showEndCityDialog) {
@@ -171,7 +191,12 @@ fun CityDetailsScreen(
                     items(items) { item ->
                         when (item) {
                             is TimelineItem.ExpenseItem -> 
-                                ExpenseTimelineCard(expense = item.expense, currencySymbol = currencySymbol)
+                                ExpenseTimelineCard(
+                                    expense = item.expense, 
+                                    currencySymbol = currencySymbol,
+                                    onClick = { viewModel.selectExpense(item.expense) },
+                                    onEditClick = { onEditExpense(item.expense.id) }
+                                )
                             is TimelineItem.ActivityItem -> 
                                 ActivityTimelineCard(activity = item.activity)
                         }

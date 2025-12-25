@@ -3,7 +3,9 @@ package com.example.tripexpensetracker.ui.common
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,21 +17,30 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseTimelineCard(
     expense: Expense,
     currencySymbol: String = "₹",
+    onClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null
 ) {
     val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
     
+    val isSettlement = expense.category == "Settlement"
+    val cardColor = if (isSettlement) androidx.compose.ui.graphics.Color(0xFFE8F5E9) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+    val contentColor = if (isSettlement) androidx.compose.ui.graphics.Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+    val icon = if (isSettlement) Icons.Default.CheckCircle else Icons.Default.AttachMoney
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-        )
+            containerColor = cardColor
+        ),
+        onClick = { onClick?.invoke() }
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -37,9 +48,9 @@ fun ExpenseTimelineCard(
         ) {
             // Expense icon
             Icon(
-                Icons.Default.AttachMoney,
+                icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
+                tint = contentColor,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -72,18 +83,32 @@ fun ExpenseTimelineCard(
             Text(
                 "${currencySymbol}${String.format("%.2f", expense.amount)}",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error
+                color = contentColor
             )
             
-            if (onDeleteClick != null) {
+            if (onEditClick != null || onDeleteClick != null) {
                 Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Row {
+                    if (onEditClick != null) {
+                        IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    if (onDeleteClick != null) {
+                        IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

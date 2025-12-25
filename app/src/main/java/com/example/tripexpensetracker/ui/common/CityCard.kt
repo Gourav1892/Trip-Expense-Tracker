@@ -5,8 +5,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -26,8 +31,11 @@ fun CityCard(
     isLocked: Boolean = false,
     activeCityName: String? = null,
     currencySymbol: String = "₹",
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
+    var menuExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val cardAlpha = if (isLocked) 0.5f else 1f
     val containerColor = when {
         isActive -> MaterialTheme.colorScheme.primaryContainer
@@ -106,20 +114,39 @@ fun CityCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     
-                    // Date range if available
-                    stats.dateRange.let { (start, end) ->
-                        if (start != null && end != null) {
-                            val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
-                            val rangeText = if (start == end) {
-                                dateFormat.format(start)
-                            } else {
-                                "${dateFormat.format(start)} - ${dateFormat.format(end)}"
+                    // Date range
+                    val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+                    val startDate = if (destination.startDate > 0) Date(destination.startDate) else null
+                    val endDate = if (destination.endDate > 0) Date(destination.endDate) else null
+                    
+                    if (startDate != null) {
+                        val startStr = dateFormat.format(startDate)
+                        val dateText = if (endDate != null) {
+                             if (dateFormat.format(startDate) == dateFormat.format(endDate)) {
+                                 startStr // Same day
+                             } else {
+                                 "$startStr - ${dateFormat.format(endDate)}"
+                             }
+                        } else {
+                            if (isActive) "Started $startStr" else startStr
+                        }
+                        
+                        Text(
+                            dateText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        // Fallback to stats if destination dates aren't set (legacy data)
+                         stats.dateRange.let { (s, e) ->
+                            if (s != null && e != null) {
+                                val rangeText = if (dateFormat.format(s) == dateFormat.format(e)) {
+                                    dateFormat.format(s)
+                                } else {
+                                    "${dateFormat.format(s)} - ${dateFormat.format(e)}"
+                                }
+                                Text(rangeText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text(
-                                rangeText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                     
@@ -176,6 +203,38 @@ fun CityCard(
                     }
                 }
                 
+                // Menu
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.MoreVert,
+                            contentDescription = "City Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            onClick = {
+                                menuExpanded = false
+                                onEditClick()
+                            },
+                            leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Edit, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                menuExpanded = false
+                                onDeleteClick()
+                            },
+                            leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                        )
+                    }
+                }
+
                 Icon(
                     if (isLocked) Icons.Default.Lock else Icons.Default.ChevronRight,
                     contentDescription = if (isLocked) "Locked" else "Open city",

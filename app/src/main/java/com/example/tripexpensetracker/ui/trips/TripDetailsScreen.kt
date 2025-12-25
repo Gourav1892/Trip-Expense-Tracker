@@ -48,6 +48,7 @@ fun TripDetailsScreen(
     onEditTripClick: (String) -> Unit,
 
     onNavigateToAnalytics: (String) -> Unit, // New callback
+    onEditExpense: (String) -> Unit, // Callback for editing expense
     onNavigateToCityDetails: (String) -> Unit = {}, // Navigate to city details
     viewModel: TripDetailsViewModel = hiltViewModel()
 ) {
@@ -59,6 +60,9 @@ fun TripDetailsScreen(
     val destinations by viewModel.destinations.collectAsState()
     val itineraryItems by viewModel.itineraryItems.collectAsState()
     val people by viewModel.people.collectAsState()
+    
+    val selectedExpense by viewModel.selectedExpense.collectAsState()
+    val selectedExpenseShares by viewModel.selectedExpenseShares.collectAsState()
     
     // Active city tracking
     val activeCityId by viewModel.activeCityId.collectAsState()
@@ -72,8 +76,29 @@ fun TripDetailsScreen(
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
     var showDeleteTripDialog by remember { mutableStateOf(false) }
     
-    var selectedTab by remember { mutableStateOf(0) }
+    var showEditCityDialog by remember { mutableStateOf(false) }
+    var cityToEdit by remember { mutableStateOf<com.example.tripexpensetracker.data.model.Destination?>(null) }
+    
+    var showDeleteCityDialog by remember { mutableStateOf(false) }
+    var cityToDelete by remember { mutableStateOf<com.example.tripexpensetracker.data.model.Destination?>(null) }
+    
+    var selectedTab by remember { mutableStateOf(-1) } // -1 = Overview, 0 = Expenses, 1 = Itinerary
     val tabs = listOf("Expenses", "Itinerary")
+
+    // Expense Details Dialog
+    if (selectedExpense != null) {
+        com.example.tripexpensetracker.ui.common.ExpenseDetailsDialog(
+            expense = selectedExpense!!,
+            shares = selectedExpenseShares,
+            people = people,
+            currencySymbol = trip?.currencySymbol ?: "₹",
+            onDismiss = { viewModel.dismissExpenseDetails() },
+            onEdit = {
+                viewModel.dismissExpenseDetails()
+                onEditExpense(selectedExpense!!.id)
+            }
+        )
+    }
 
     if (showDeleteDialog && expenseToDelete != null) {
         AlertDialog(
@@ -148,16 +173,60 @@ fun TripDetailsScreen(
         )
     }
 
-    if (showAddDestination) {
+
+
+    if (showDeleteCityDialog && cityToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteCityDialog = false },
+            title = { Text("Delete City?") },
+            text = { Text("Are you sure you want to delete '${cityToDelete?.name}'? All expenses linked to this city will be moved to 'General' (unlinked).") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteDestination(cityToDelete!!.id)
+                        showDeleteCityDialog = false
+                        cityToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteCityDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAddDestination || showEditCityDialog) {
+        val isEditing = showEditCityDialog && cityToEdit != null
         AddDestinationDialog(
-            onDismiss = { showAddDestination = false },
+            initialName = if (isEditing) cityToEdit!!.name else "",
+            initialStart = if (isEditing) cityToEdit!!.startDate else null,
+            initialEnd = if (isEditing) cityToEdit!!.endDate else null,
+            onDismiss = { 
+                showAddDestination = false 
+                showEditCityDialog = false
+                cityToEdit = null
+            },
             onConfirm = { name, start, end ->
-                viewModel.addDestination(com.example.tripexpensetracker.data.model.Destination(
-                    name = name,
-                    startDate = start,
-                    endDate = end
-                ))
+                if (isEditing) {
+                    viewModel.updateDestination(cityToEdit!!.copy(
+                        name = name,
+                        startDate = start,
+                        endDate = end
+                    ))
+                } else {
+                    viewModel.addDestination(com.example.tripexpensetracker.data.model.Destination(
+                        name = name,
+                        startDate = start,
+                        endDate = end
+                    ))
+                }
                 showAddDestination = false
+                showEditCityDialog = false
+                cityToEdit = null
             }
         )
     }
@@ -226,8 +295,8 @@ fun TripDetailsScreen(
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Menu, contentDescription = null) },
                     label = { Text("Overview") },
-                    selected = true,
-                    onClick = { /* Already on overview */ }
+                    selected = selectedTab == -1,
+                    onClick = { selectedTab = -1 }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.DateRange, contentDescription = null) },
@@ -255,217 +324,59 @@ fun TripDetailsScreen(
             }
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 80.dp)
-        ) {
-            // Trip Summary Card
-            item {
-                TripSummaryCard(
-                    expenses = expenses,
-                    destinations = destinations,
-                    budget = trip?.budget,
-                    budgetAlertThreshold = trip?.budgetAlertThreshold ?: 80.0,
-                    currencySymbol = trip?.currencySymbol ?: "₹"
-                )
-            }
-            
-            // Participants Section
-            val currentTrip = trip
-            if (currentTrip != null && currentTrip.participants.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Participants",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
+        if (selectedTab == -1) {
+             OverviewContent(
+                paddingValues = paddingValues,
+                trip = trip,
+                expenses = expenses,
+                destinations = destinations,
+                itineraryItems = itineraryItems,
+                activeCityId = activeCityId,
+                activeTripId = activeTripId,
+                activeCityName = activeCityName,
+                tripId = tripId,
+                viewModel = viewModel,
+                onNavigateToCityDetails = onNavigateToCityDetails,
+                onEditExpense = onEditExpense,
+                onSwitchToAllExpenses = { selectedTab = 0 },
+                scope = scope,
+                snackbarHostState = snackbarHostState,
+                onShowAddDestination = { showAddDestination = true },
+                onEditCity = { 
+                    cityToEdit = it
+                    showEditCityDialog = true
+                },
+                onDeleteCity = { 
+                    cityToDelete = it
+                    showDeleteCityDialog = true
+                },
+                onDeleteExpense = { 
+                    expenseToDelete = it
+                    showDeleteDialog = true
                 }
-                
-                // Filter out declined participants
-                val visibleParticipants = currentTrip.participants.filter { 
-                    it.status != com.example.tripexpensetracker.data.model.Participant.STATUS_DECLINED 
-                }
-                
-                items(visibleParticipants.size) { index ->
-                    val participant = visibleParticipants[index]
-                    val isPending = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_INVITED
-                    val isJoined = participant.status == com.example.tripexpensetracker.data.model.Participant.STATUS_JOINED
-                    
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isPending) 
-                                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f) 
-                            else 
-                                MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Person,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = if (isPending) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = participant.name.ifBlank { participant.phoneNumber ?: "Unknown" },
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = if (isPending) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            
-                            if (isPending) {
-                                Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
-                                    Text("Pending", style = MaterialTheme.typography.labelSmall)
-                                }
-                            } else if (isJoined) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = "Joined",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-            }
-            
-            // Cities Section Header
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Cities",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    TextButton(onClick = { showAddDestination = true }) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add City")
-                    }
-                }
-            }
-            
-            // City Cards
-            if (destinations.isEmpty()) {
-                item {
-                    EmptyCitiesState(onAddCity = { showAddDestination = true })
-                }
-            } else {
-                items(destinations.size) { index ->
-                    val destination = destinations[index]
-                    var cityStats by remember { mutableStateOf(com.example.tripexpensetracker.data.model.CityStats()) }
-                    
-                    LaunchedEffect(destination.id, expenses, itineraryItems) {
-                        cityStats = viewModel.getCityStats(destination.id)
-                    }
-                    
-                    val isThisCityActive = activeCityId == destination.id
-                    val isAnotherCityActive = activeTripId == tripId && activeCityId != null && activeCityId != destination.id
-                    
-                    com.example.tripexpensetracker.ui.common.CityCard(
-                        destination = destination,
-                        stats = cityStats,
-                        isActive = isThisCityActive,
-                        isLocked = isAnotherCityActive,
-                        activeCityName = activeCityName,
-                        currencySymbol = trip?.currencySymbol ?: "₹",
-                        onClick = {
-                            when {
-                                isThisCityActive -> {
-                                    // Already visiting this city, navigate to it
-                                    onNavigateToCityDetails(destination.id)
-                                }
-                                isAnotherCityActive -> {
-                                    // Show warning: need to end current visit first
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "End your visit to $activeCityName first"
-                                        )
-                                    }
-                                }
-                                else -> {
-                                    // Start visit and navigate
-                                    viewModel.startCityVisit(destination.id, destination.name)
-                                    onNavigateToCityDetails(destination.id)
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-            
-            // Expenses Overview Section
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "All Expenses",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        "${expenses.size} total",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            // Inline expense items (not nested scrollable)
-            if (expenses.isEmpty()) {
-                item {
-                    Text(
-                        "No expenses yet. Tap + to add one!",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 32.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                items(expenses.size) { index ->
-                    val expense = expenses[index]
-                    ExpenseItem(
-                        expense = expense,
-                        onDeleteClick = { 
-                            expenseToDelete = expense
-                            showDeleteDialog = true
-                        },
-                        currencySymbol = trip?.currencySymbol ?: "₹"
-                    )
-                }
-            }
+             )
+        } else if (selectedTab == 0) {
+             ExpensesTabContent(
+                 expenses = expenses,
+                 people = people,
+                 approvedParticipants = approved,
+                 pendingParticipants = pending,
+                 selectedCategory = selectedCategory,
+                 onCategorySelected = { viewModel.onCategorySelected(it) },
+                 onResendInvite = { viewModel.resendInvite(it) },
+                 onDeleteExpense = { 
+                    expenseToDelete = it
+                    showDeleteDialog = true
+                 },
+                 onEditExpense = { onEditExpense(it.id) },
+                 onExpenseClick = { viewModel.selectExpense(it) },
+                 currencySymbol = trip?.currencySymbol ?: "₹"
+             )
+        } else {
+             ItineraryTabContent(
+                 destinations = destinations,
+                 itineraryItems = itineraryItems
+             )
         }
     }
 }
@@ -481,6 +392,8 @@ fun ExpensesTabContent(
     onCategorySelected: (String) -> Unit,
     onResendInvite: (com.example.tripexpensetracker.data.model.Participant) -> Unit,
     onDeleteExpense: (Expense) -> Unit,
+    onEditExpense: (Expense) -> Unit,
+    onExpenseClick: (Expense) -> Unit,
     currencySymbol: String
 ) {
     var showChart by remember { mutableStateOf(false) }
@@ -617,7 +530,7 @@ fun ExpensesTabContent(
         }
 
         item {
-             val categories = listOf("All", "Food", "Transport", "Lodging", "Entertainment", "General")
+             val categories = listOf("All", "Food", "Transport", "Lodging", "Entertainment", "General", "Settlement")
              androidx.compose.foundation.lazy.LazyRow(
                  horizontalArrangement = Arrangement.spacedBy(8.dp),
                  modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
@@ -634,10 +547,12 @@ fun ExpensesTabContent(
         }
 
         items(expenses) { expense ->
-             ExpenseItem(
+             com.example.tripexpensetracker.ui.common.ExpenseTimelineCard(
                  expense = expense,
-                 onDeleteClick = { onDeleteExpense(expense) },
-                 currencySymbol = currencySymbol
+                 currencySymbol = currencySymbol,
+                 onClick = { onExpenseClick(expense) },
+                 onEditClick = { onEditExpense(expense) },
+                 onDeleteClick = { onDeleteExpense(expense) }
              )
         }
     }

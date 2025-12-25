@@ -32,8 +32,45 @@ class SettlementViewModel @Inject constructor(
     val currencySymbol: StateFlow<String> = _currencySymbol
 
     var peopleMap: Map<String, String> = emptyMap()
+    private var myPersonId: String = ""
+
+    fun recordPayment(toPersonId: String, amount: Double) {
+        viewModelScope.launch {
+            if (myPersonId.isBlank()) return@launch
+            
+            val toName = peopleMap[toPersonId] ?: "Unknown"
+            val newExpense = com.example.tripexpensetracker.data.model.Expense(
+                tripId = currentTripId,
+                title = "Payment to $toName",
+                amount = amount,
+                category = "Settlement", // Special category
+                paidByPersonId = myPersonId,
+                date = java.util.Date()
+            )
+            
+            val shares = listOf(
+                com.example.tripexpensetracker.data.model.ExpenseShare(
+                    personId = toPersonId,
+                    amountOwed = amount
+                )
+            )
+            
+            // Insert expense and shares
+            repository.insertExpense(newExpense, shares)
+            
+            // Recalculate will happen automatically via flows? 
+            // Actually calculateSettlements is manual. We should re-trigger it or rely on Flow.
+            // The ViewModel observes flows in calculateSettlements, but it uses .first().
+            // We need to switch calculateSettlements to collect flows continuously or manually re-call.
+            // For now, let's manually re-call calculateSettlements(currentTripId).
+            calculateSettlements(currentTripId)
+        }
+    }
+
+    private var currentTripId: String = ""
 
     fun calculateSettlements(tripId: String) {
+        currentTripId = tripId
         viewModelScope.launch {
             _isLoading.value = true
             val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
@@ -60,7 +97,7 @@ class SettlementViewModel @Inject constructor(
                 }
                 
                 peopleMap = hydratedPeople.associate { it.id to it.name }
-                val myPersonId = hydratedPeople.find { it.userId == currentUid }?.id ?: ""
+                myPersonId = hydratedPeople.find { it.userId == currentUid }?.id ?: "" // Store myPersonId
 
                 val calculatedDebts = SettlementCalculator.calculateSettlements(expenses, hydratedPeople, shares)
                 _debts.value = calculatedDebts

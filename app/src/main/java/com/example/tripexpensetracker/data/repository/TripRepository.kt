@@ -102,6 +102,18 @@ class TripRepository @Inject constructor(
             .update("budget", budget)
             .await()
     }
+    
+    suspend fun setActiveDestination(tripId: String, destinationId: String) {
+        firestore.collection("trips").document(tripId)
+            .update("activeDestinationId", destinationId)
+            .await()
+    }
+
+    suspend fun clearActiveDestination(tripId: String) {
+        firestore.collection("trips").document(tripId)
+            .update("activeDestinationId", null)
+            .await()
+    }
 
     // Person Operations
     fun getPeopleForTrip(tripId: String): Flow<List<Person>> {
@@ -147,6 +159,34 @@ class TripRepository @Inject constructor(
     
     suspend fun updateExpense(expense: Expense) {
         firestore.collection("trips").document(expense.tripId).collection("expenses").document(expense.id).set(expense).await()
+    }
+
+    suspend fun updateExpenseWithShares(expense: Expense, shares: List<ExpenseShare>) {
+        val expenseRef = firestore.collection("trips").document(expense.tripId).collection("expenses").document(expense.id)
+        val sharesCollection = firestore.collection("trips").document(expense.tripId).collection("shares")
+        
+        firestore.runBatch { batch ->
+             batch.set(expenseRef, expense)
+             
+             // We can't easily query within a transaction/batch without reading first.
+             // But we need to delete OLD shares. 
+             // Ideally we should have read them before.
+             // For simplicity in this non-perfect app, we'll just query them outside batch or assume we can just overwrite if IDs matched (but IDs won't match if regenerated).
+             // Correct way: Query old shares, delete them, add new ones.
+        }.await()
+        
+        // Batch limit is 500.
+        // Step 1: Delete old shares
+        val oldShares = sharesCollection.whereEqualTo("expenseId", expense.id).get().await()
+        firestore.runBatch { batch ->
+            oldShares.documents.forEach { batch.delete(it.reference) }
+            batch.set(expenseRef, expense)
+            shares.forEach { share ->
+                 val shareDoc = sharesCollection.document()
+                 val shareWithId = share.copy(id = shareDoc.id, expenseId = expense.id, tripId = expense.tripId)
+                 batch.set(shareDoc, shareWithId)
+            }
+        }.await()
     }
     
     suspend fun deleteExpense(expense: Expense) {
@@ -196,6 +236,14 @@ class TripRepository @Inject constructor(
     
     suspend fun getSharesForExpense(expenseId: String): List<ExpenseShare> {
         return firestore.collectionGroup("shares")
+            .whereEqualTo("expenseId", expenseId)
+            .get()
+            .await()
+            .toObjects<ExpenseShare>()
+    }
+
+    suspend fun getSharesForExpense(tripId: String, expenseId: String): List<ExpenseShare> {
+        return firestore.collection("trips").document(tripId).collection("shares")
             .whereEqualTo("expenseId", expenseId)
             .get()
             .await()
@@ -448,6 +496,50 @@ class TripRepository @Inject constructor(
         val ref = firestore.collection("trips").document(tripId).collection("destinations").document()
         val newDest = destination.copy(id = ref.id, tripId = tripId)
         ref.set(newDest).await()
+    }
+    
+    suspend fun updateDestination(tripId: String, destination: com.example.tripexpensetracker.data.model.Destination) {
+        firestore.collection("trips").document(tripId)
+            .collection("destinations").document(destination.id)
+            .set(destination)
+            .await()
+    }
+
+    suspend fun deleteDestination(tripId: String, destinationId: String) {
+        val tripRef = firestore.collection("trips").document(tripId)
+        
+        // 1. Delete destination document
+        tripRef.collection("destinations").document(destinationId).delete().await()
+        
+        // 2. Unlink expenses (set destinationId to "")
+        // We can't do this transactionally effectively with many documents, so we do batch or iterative updates.
+        // Querying all expenses with this destinationId
+        val expensesSnapshot = tripRef.collection("expenses")
+            .whereEqualTo("destinationId", destinationId)
+            .get()
+            .await()
+            
+        if (!expensesSnapshot.isEmpty) {
+            firestore.runBatch { batch ->
+                expensesSnapshot.documents.forEach { doc ->
+                    batch.update(doc.reference, "destinationId", "")
+                }
+            }.await()
+        }
+
+        // 3. Unlink itinerary items
+        val itinerarySnapshot = tripRef.collection("itinerary")
+           .whereEqualTo("destinationId", destinationId)
+           .get()
+           .await()
+
+        if (!itinerarySnapshot.isEmpty) {
+            firestore.runBatch { batch ->
+                 itinerarySnapshot.documents.forEach { doc ->
+                     batch.update(doc.reference, "destinationId", "")
+                 }
+            }.await()
+        }
     }
 
     fun getDestinationsFlow(tripId: String): Flow<List<com.example.tripexpensetracker.data.model.Destination>> = callbackFlow {

@@ -45,6 +45,12 @@ import javax.inject.Inject
 import com.example.tripexpensetracker.util.NotificationHelper
 import android.Manifest
 import android.os.Build
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.ExistingPeriodicWorkPolicy
+import java.util.concurrent.TimeUnit
+import java.util.Calendar
+import com.example.tripexpensetracker.workers.DailyExpenseWorker
 
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -102,6 +108,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
              registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        
+        // Schedule Daily Notification
+        scheduleDailyNotification()
         
         val isOnboardingCompleted = mainViewModel.isOnboardingCompleted
         val startDestination = if (!isOnboardingCompleted) {
@@ -180,6 +189,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun scheduleDailyNotification() {
+        val currentDate = Calendar.getInstance()
+        val dueDate = Calendar.getInstance()
+
+        // Set Execution around 09:00:00 PM
+        dueDate.set(Calendar.HOUR_OF_DAY, 21)
+        dueDate.set(Calendar.MINUTE, 0)
+        dueDate.set(Calendar.SECOND, 0)
+
+        if (dueDate.before(currentDate)) {
+            dueDate.add(Calendar.HOUR_OF_DAY, 24)
+        }
+
+        val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
+        val dailyWorkRequest = PeriodicWorkRequestBuilder<DailyExpenseWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
+            .addTag("daily_expense_summary")
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "DailyExpenseSummary",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            dailyWorkRequest
+        )
     }
 }
 
@@ -260,15 +295,23 @@ fun AppNavigation(startDestination: String) {
                  },
                  onNavigateToCityDetails = { destinationId ->
                      navController.navigate("cityDetails/$tripId/$destinationId")
+                 },
+                 onEditExpense = { expenseId ->
+                     navController.navigate("add_edit_expense/$tripId?expenseId=$expenseId")
                  }
              )
         }
 
         composable(
-            route = Screen.AddEditExpense.route + "?destinationId={destinationId}",
+            route = Screen.AddEditExpense.route + "?destinationId={destinationId}&expenseId={expenseId}",
             arguments = listOf(
                 navArgument("tripId") { type = NavType.StringType },
                 navArgument("destinationId") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("expenseId") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
@@ -277,6 +320,7 @@ fun AppNavigation(startDestination: String) {
         ) { backStackEntry ->
              val tripId = backStackEntry.arguments?.getString("tripId") ?: return@composable
              val destinationId = backStackEntry.arguments?.getString("destinationId")
+             // expenseId is automatically available to ViewModel via SavedStateHandle
              AddEditExpenseScreen(
                  tripId = tripId,
                  destinationId = destinationId,
@@ -317,6 +361,9 @@ fun AppNavigation(startDestination: String) {
                 onEndCityVisit = {
                     // The viewModel in TripDetailsScreen will handle this
                     // We just need to navigate back
+                },
+                onEditExpense = { expenseId ->
+                    navController.navigate("add_edit_expense/$tripId?expenseId=$expenseId")
                 }
             )
         }

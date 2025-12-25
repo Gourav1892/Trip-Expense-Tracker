@@ -27,6 +27,7 @@ class AddEditExpenseViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val tripId: String = checkNotNull(savedStateHandle["tripId"])
+    private val expenseId: String? = savedStateHandle["expenseId"]
 
     private val rawPeople = repository.getPeopleForTrip(tripId)
     
@@ -79,23 +80,64 @@ class AddEditExpenseViewModel @Inject constructor(
     private val _suggestedDestinationId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val suggestedDestinationId = _suggestedDestinationId.asStateFlow()
 
+    private val _editState = kotlinx.coroutines.flow.MutableStateFlow<EditState?>(null)
+    val editState = _editState.asStateFlow()
+
+    data class EditState(
+        val title: String,
+        val amount: Double,
+        val category: String,
+        val paidBy: String,
+        val destinationId: String,
+        val shares: List<com.example.tripexpensetracker.data.model.ExpenseShare>
+    )
+
     init {
         viewModelScope.launch {
             val trip = repository.getTripById(tripId)
             _currencySymbol.value = trip?.currencySymbol ?: "₹"
             
-            // Check if there's an active city visit for THIS trip
-            val activeTid = activeCityManager.activeTripId.firstOrNull()
-            val activeCid = activeCityManager.activeCityId.firstOrNull()
-            if (activeTid == tripId) {
-                _suggestedDestinationId.value = activeCid
+            if (expenseId != null) {
+                // Load existing expense
+                val expenses = repository.getExpensesForTrip(tripId).firstOrNull() ?: emptyList() 
+                // Note: getExpensesForTrip returns a Flow. We need to find the specific expense.
+                // Ideally repository should have getExpenseById.
+                // Let's iterate found expenses or fetch single? 
+                // Repository doesn't expose getExpenseById directly except via looking at the list.
+                // Let's assume we can find it in the list for now or we added getSharesForExpense logic.
+                // Wait, I can use the new getSharesForExpense!
+                
+                // Better: find expense from list.
+                // Flow collection is tricky here if we want one-shot.
+                // Let's just collect first emission of list and find it.
+                val expense = expenses.find { it.id == expenseId }
+                
+                if (expense != null) {
+                     val shares = repository.getSharesForExpense(tripId, expenseId)
+                     _editState.value = EditState(
+                         title = expense.title,
+                         amount = expense.amount,
+                         category = expense.category,
+                         paidBy = expense.paidByPersonId,
+                         destinationId = expense.destinationId,
+                         shares = shares
+                     )
+                     _category.value = expense.category
+                     _suggestedDestinationId.value = expense.destinationId // Use expense's destination
+                }
+            } else {
+                 // Check if there's an active city visit for THIS trip (shared state)
+                val activeDestId = trip?.activeDestinationId
+                if (activeDestId != null) {
+                    _suggestedDestinationId.value = activeDestId
+                }
             }
         }
     }
 
     fun onTitleChanged(title: String) {
         // If the current category is "General" (default), try to find a better one
-        if (_category.value == "General") {
+        if (_category.value == "General" && expenseId == null) { // Only suggest on create
             val suggestion = CategorySuggester.suggestCategory(title)
             if (suggestion != null) {
                 _category.value = suggestion
@@ -174,18 +216,21 @@ class AddEditExpenseViewModel @Inject constructor(
                     }
                 }
 
-                repository.insertExpense(
-                    Expense(
+                val expenseToSave = Expense(
+                        id = expenseId ?: "",
                         tripId = tripId,
                         destinationId = destinationId,
                         paidByPersonId = paidByPersonId,
                         title = title,
-
                         amount = amount,
                         category = finalCategory
-                    ),
-                    expenseShares
-                )
+                    )
+
+                if (expenseId != null) {
+                    repository.updateExpenseWithShares(expenseToSave, expenseShares)
+                } else {
+                    repository.insertExpense(expenseToSave, expenseShares)
+                }
                 _uiState.value = UiState.Success
                 onSuccess()
             } catch (e: Exception) {

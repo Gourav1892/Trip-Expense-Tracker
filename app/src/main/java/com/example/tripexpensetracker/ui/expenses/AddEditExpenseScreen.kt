@@ -30,6 +30,7 @@ fun AddEditExpenseScreen(
 
     val people by viewModel.people.collectAsState(initial = emptyList())
     val destinations by viewModel.destinations.collectAsState(initial = emptyList())
+    val editState by viewModel.editState.collectAsState()
 
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -44,9 +45,10 @@ fun AddEditExpenseScreen(
     var cityExpanded by remember { mutableStateOf(false) }
     
     // Pre-select city when loading from navigation or if suggested by active visit
-    LaunchedEffect(destinationId, suggestedDestinationId, destinations) {
+    // Pre-select city when loading from navigation or if suggested by active visit OR edit state
+    LaunchedEffect(destinationId, suggestedDestinationId, destinations, editState) {
         if (destinations.isNotEmpty() && selectedDestination == null) {
-            val targetId = destinationId ?: suggestedDestinationId
+            val targetId = editState?.destinationId ?: destinationId ?: suggestedDestinationId
             if (targetId != null) {
                 selectedDestination = destinations.find { it.id == targetId }
             }
@@ -67,10 +69,49 @@ fun AddEditExpenseScreen(
     }
 
     // Initialize selection when people load (select all by default)
-    LaunchedEffect(people) {
-        if (selectedForSplit.isEmpty() && people.isNotEmpty() && shareAmounts.isEmpty()) {
-            // Only default select all if first load (shareAmounts empty check adds safety)
+    // Initialize selection when people load (select all by default if NEW expense)
+    LaunchedEffect(people, editState) {
+        if (selectedForSplit.isEmpty() && people.isNotEmpty() && shareAmounts.isEmpty() && editState == null) {
+            // Only default select all if first load AND creating new expense
             selectedForSplit = people.map { it.id }.toSet()
+        }
+    }
+
+    // Load Edit State
+    LaunchedEffect(editState, people) {
+        val state = editState
+        if (state != null && people.isNotEmpty() && title.isEmpty()) { // Only load once/if empty
+             title = state.title
+             amount = state.amount.toString()
+             
+             // Payer
+             selectedPayer = people.find { it.id == state.paidBy }
+             
+             // Content: Shares
+             // We need to infer SplitType?
+             // Simplest is to assume UNEQUAL if shares exist with arbitrary amounts, or we can check logic?
+             // Logic:
+             // If all shares equal amount/count -> Equal?
+             // If shares have exact amounts -> Unequal.
+             // If shares have % -> Percentage.
+             // Currently Model `ExpenseShare` only has `amountOwed`. It does NOT store the original split type or %/share_count.
+             // This is a limitation. We can only restore as "Fixed Amounts" (UNEQUAL) or try to guess.
+             // BEST EFFORT: Load as UNEQUAL (Exact Amounts) because that is the source of truth.
+             // This preserves correctness even if user originally used % or Equal.
+             
+             splitType = SplitType.UNEQUAL
+             
+             val newShareAmounts = mutableMapOf<String, String>()
+             val newSelected = mutableSetOf<String>()
+             
+             state.shares.forEach { share ->
+                 newSelected.add(share.personId)
+                 newShareAmounts[share.personId] = share.amountOwed.toString()
+             }
+             
+             // For people NOT in shares, they are unselected
+             selectedForSplit = newSelected
+             shareAmounts = newShareAmounts
         }
     }
 

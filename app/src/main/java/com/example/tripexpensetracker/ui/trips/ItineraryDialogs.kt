@@ -10,17 +10,22 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddDestinationDialog(
+    initialName: String = "",
+    initialStart: Long? = null,
+    initialEnd: Long? = null,
     onDismiss: () -> Unit,
     onConfirm: (String, Long, Long) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    // Simple dates for MVP: Current time
-    val start = System.currentTimeMillis()
-    val end = System.currentTimeMillis() + 86400000
+    var name by remember { mutableStateOf(initialName) }
+    // Simple dates for MVP: Default to provided or current time
+    val start = initialStart ?: System.currentTimeMillis()
+    val end = initialEnd ?: (System.currentTimeMillis() + 86400000)
+
+    val isEdit = initialName.isNotBlank()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Destination") },
+        title = { Text(if (isEdit) "Edit City" else "Add Destination") },
         text = {
             Column {
                 OutlinedTextField(
@@ -36,7 +41,7 @@ fun AddDestinationDialog(
             TextButton(
                 onClick = { if (name.isNotBlank()) onConfirm(name, start, end) },
                 enabled = name.isNotBlank()
-            ) { Text("Add") }
+            ) { Text(if (isEdit) "Save" else "Add") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

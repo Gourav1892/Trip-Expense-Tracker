@@ -24,7 +24,12 @@ fun AnalyticsScreen(
     val timeRange by viewModel.timeRange.collectAsState()
     val categoryData by viewModel.categoryData.collectAsState()
     val dailyTrend by viewModel.dailyTrend.collectAsState()
+    val cityData by viewModel.cityData.collectAsState()
     val totalSpent by viewModel.totalSpent.collectAsState()
+    val currencySymbol by viewModel.currencySymbol.collectAsState()
+
+    var selectedTabIndex by remember { mutableStateOf(0) }
+    val tabs = listOf("Overview", "Date Wise", "City Wise")
 
     Scaffold(
         topBar = {
@@ -65,7 +70,7 @@ fun AnalyticsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Total Spent", style = MaterialTheme.typography.labelMedium)
                     Text(
-                        NumberFormat.getCurrencyInstance().format(totalSpent),
+                        "${currencySymbol}${String.format("%.2f", totalSpent)}",
                         style = MaterialTheme.typography.headlineLarge
                     )
                 }
@@ -73,32 +78,71 @@ fun AnalyticsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Category Chart
-            if (categoryData.isNotEmpty()) {
-                Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(16.dp))
-                PieChart(
-                    data = categoryData,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                )
-            } else {
-                 Text("No data to display", style = MaterialTheme.typography.bodyMedium)
+            // Tabs
+            TabRow(selectedTabIndex = selectedTabIndex) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = { Text(title) }
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
             
-            // Daily Trend (Simple List for now as LineChart is complex to build from scratch without canvas utils)
-            // Or we can try a simple BarChart style for daily trend
-            if (dailyTrend.isNotEmpty()) {
-                Text("Daily Trend", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                LineChart(
-                    data = dailyTrend,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            when (selectedTabIndex) {
+                0 -> { // Overview (Category)
+                    if (categoryData.isNotEmpty()) {
+                        Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PieChart(
+                            data = categoryData,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp)
+                        )
+                    } else {
+                         Text("No category data", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                1 -> { // Date Wise
+                    if (dailyTrend.isNotEmpty()) {
+                        Text("Daily Trend", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        LineChart(
+                            data = dailyTrend,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("No data available for this range", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                2 -> { // City Wise
+                    if (cityData.isNotEmpty()) {
+                        Text("Expenses by City", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PieChart(
+                            data = cityData,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp)
+                        )
+                        // List breakdown
+                        Spacer(modifier = Modifier.height(16.dp))
+                        cityData.forEach { (city, amount) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(city, style = MaterialTheme.typography.bodyMedium)
+                                Text("${currencySymbol}${String.format("%.2f", amount)}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    } else {
+                        Text("No city data available", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
         }
     }
